@@ -1,0 +1,15 @@
+aiogram==3.15.0
+pydantic==2.9.2
+pydantic_core==2.23.4
+pillow==10.4.0
+yt-dlp
+gallery_dl==1.31.2
+spotdl==4.4.3
+ffmpeg-python==0.2.0
+python-dotenv==1.2.1
+tqdm==4.67.3
+aiohttp==3.10.11
+requests==2.32.5
+aiofiles==24.1.0
+numpy==2.4.2
+aiosqlite==0.20.0

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.venv
+venv
+env
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Данные бота (они будут монтироваться через volume)
+bot_data.db
+bot_data.db-journal
+data/
+*.log
+
+# Временные файлы
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Документация
+*.md
+README.md
+INSTALL_VPS.md
+DOCKER_VOLUME.md
+DISK_CLEANUP.md
+QUICKSTART.md
+
+# Скрипты установки
+install.sh
+emergency_cleanup.sh

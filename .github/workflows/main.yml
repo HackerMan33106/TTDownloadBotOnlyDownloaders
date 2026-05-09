@@ -1,0 +1,87 @@
+name: Deploy Telegram Bot to VPS
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      TRASH_GROUP_ID: ${{ secrets.TRASH_GROUP_ID }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🚀 Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          command_timeout: 30m
+          envs: BOT_TOKEN,TRASH_GROUP_ID,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,SPOTIFY_REFRESH_TOKEN,TELEGRAM_API_ID,TELEGRAM_API_HASH
+          script: |
+            echo ">>> 📥 Updating code..."
+            cd ~/app || exit 1
+
+            # Останавливаем контейнеры и сохраняем data/
+            if [ -d "TTDownloadBotOnlyDownloders" ]; then
+              echo ">>> 🛑 Stopping containers..."
+              cd TTDownloadBotOnlyDownloders
+              docker compose down || true
+              cd ~/app
+
+              echo ">>> 💾 Backing up data directory..."
+              if [ -d "TTDownloadBotOnlyDownloders/data" ]; then
+                mv TTDownloadBotOnlyDownloders/data ~/app/data_backup
+              fi
+
+              echo ">>> 🗑️ Removing old directory..."
+              sudo rm -rf TTDownloadBotOnlyDownloders
+            fi
+
+            echo ">>> 🔄 Cloning repository..."
+            git clone git@github.com:HackerMan33106/TTDownloadBotOnlyDownloaders.git TTDownloadBotOnlyDownloders
+            cd TTDownloadBotOnlyDownloders || exit 1
+
+            echo ">>> 📦 Restoring data directory..."
+            if [ -d ~/app/data_backup ]; then
+              mv ~/app/data_backup ./data
+            else
+              mkdir -p ./data
+            fi
+
+            echo ">>> 📝 Creating .env file..."
+            cat > .env << EOF
+            BOT_TOKEN=${BOT_TOKEN}
+            TRASH_GROUP_ID=${TRASH_GROUP_ID}
+            SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+            SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+            SPOTIFY_REFRESH_TOKEN=${SPOTIFY_REFRESH_TOKEN}
+            USE_LOCAL_API=true
+            LOCAL_API_URL=http://172.17.0.1:8200
+            TELEGRAM_API_ID=${TELEGRAM_API_ID}
+            TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+            EOF
+
+            echo ">>> 🔨 Building new Docker images..."
+            docker compose build
+
+            echo ">>> 🚀 Starting containers..."
+            docker compose up -d
+
+            echo ">>> 🧹 Cleaning up old images..."
+            docker image prune -f
+
+            echo ">>> ✅ Deployment complete!"
+            echo ">>> 📊 Container status:"
+            docker compose ps

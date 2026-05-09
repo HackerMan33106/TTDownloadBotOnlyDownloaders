@@ -1,0 +1,50 @@
+# Переменные окружения
+.env
+
+# База данных
+bot_data.db
+bot_data.db-shm
+bot_data.db-wal
+data/
+
+# Временные файлы
+downloads/
+temp_videos/
+*.mp4
+*.webm
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Остальное
+cookies.txt
+CLAUDE.md
+
+# Claude Code
+.claude/
+.claudeignore
+
+# GitHub Actions (временные workflow файлы)
+.github/workflows/*
+!.github/workflows/main.yml
