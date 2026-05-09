@@ -173,7 +173,39 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             if len(callback_data) > 1:
                 button_user_id = int(callback_data[1])
                 if current_user_id == button_user_id or await is_admin(current_user_id):
-                    logger.info(f"🗑️ Пользователь {current_user_id} удалил сообщение через кнопку (chat_id: {callback.message.chat.id})")
+                    # Извлекаем информацию из сообщения для логирования
+                    message_id = callback.message.message_id
+                    caption = callback.message.caption or callback.message.text or ""
+
+                    # Парсим username и URL из caption
+                    lines = caption.split('\n')
+                    author_username = None
+                    video_url = None
+
+                    for line in lines:
+                        if line.startswith('@'):
+                            author_username = line.strip()
+                        elif line.startswith('http'):
+                            video_url = line.strip()
+
+                    # Формируем username удаляющего пользователя
+                    if callback.from_user.username:
+                        deleter_info = f"@{callback.from_user.username} ({current_user_id})"
+                    else:
+                        deleter_info = str(current_user_id)
+
+                    # Логируем с полной информацией
+                    log_parts = [f"🗑️ Пользователь {deleter_info} удалил сообщение через кнопку"]
+                    log_parts.append(f"ID сообщения: {message_id}")
+                    if author_username:
+                        # Пытаемся найти ID автора из button_user_id
+                        author_info = f"{author_username} ({button_user_id})"
+                        log_parts.append(f"Автор контента: {author_info}")
+                    if video_url:
+                        log_parts.append(f"URL: {video_url}")
+
+                    logger.info(" | ".join(log_parts))
+
                     try:
                         await callback.message.delete()
                     except Exception:
