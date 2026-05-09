@@ -53,6 +53,7 @@ WHITELIST_USERS = PERMANENT_ADMIN + MANUAL_USERS_IDS
 
 WHITELIST_GROUPS_STR = os.getenv('WHITELIST_GROUPS', '')
 WHITELIST_GROUPS = [int(x.strip()) for x in WHITELIST_GROUPS_STR.split(',') if x.strip().lstrip('-').isdigit()]
+logger.info(f"📋 Загружено групп в whitelist: {len(WHITELIST_GROUPS)} - {WHITELIST_GROUPS}")
 
 # Trash group для кэширования медиафайлов (обязательная переменная окружения)
 TRASH_GROUP_ID_STR = os.getenv("TRASH_GROUP_ID")
