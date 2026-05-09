@@ -1584,17 +1584,26 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                     
                     # ВАЖНО: Извлекаем all_msg_ids из старой кнопки delete_parts, если это разделенное видео
                     old_delete_callback = None
+                    original_owner_id = None
                     if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
                         for row in callback.message.reply_markup.inline_keyboard:
                             for button in row:
                                 if button.callback_data:
                                     real_bd2 = verify_callback(button.callback_data)
-                                    if real_bd2 and real_bd2.startswith("delete_parts:"):
-                                        old_delete_callback = button.callback_data
+                                    if real_bd2:
+                                        if real_bd2.startswith("delete_parts:"):
+                                            old_delete_callback = button.callback_data
+                                        elif real_bd2.startswith("delete_video:"):
+                                            # Извлекаем ID владельца из кнопки delete_video
+                                            try:
+                                                original_owner_id = int(real_bd2.split(":")[1])
+                                            except:
+                                                pass
                                     if DEBUG_MODE:
-                                        logger.info(f"🔍 Найдена старая кнопка delete_parts: {old_delete_callback}")
-                                    break
-                            if old_delete_callback:
+                                        logger.info(f"🔍 Найдена старая кнопка: {real_bd2}, owner_id={original_owner_id}")
+                                    if old_delete_callback and original_owner_id:
+                                        break
+                            if old_delete_callback and original_owner_id:
                                 break
                     
                     if str(chat_id).startswith("-100"):
@@ -1606,7 +1615,12 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                             logger.info(f"🔗 Создана ссылка на аудио: {audio_link}")
 
                         # Сохраняем callback_data для кнопки удаления (с all_msg_ids если есть)
-                        delete_callback = old_delete_callback if old_delete_callback else "delete_message"
+                        if old_delete_callback:
+                            delete_callback = old_delete_callback
+                        elif original_owner_id:
+                            delete_callback = f"delete_video:{original_owner_id}"
+                        else:
+                            delete_callback = "delete_message"
 
                         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                             [InlineKeyboardButton(text="🎵 Аудио", url=audio_link)],
