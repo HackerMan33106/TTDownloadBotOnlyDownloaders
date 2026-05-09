@@ -15,6 +15,9 @@ jobs:
       SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      PERMANENT_ADMIN: ${{ secrets.PERMANENT_ADMIN }}
+      WHITELIST_USERS: ${{ secrets.WHITELIST_USERS }}
+      WHITELIST_GROUPS: ${{ secrets.WHITELIST_GROUPS }}
 
     steps:
       - name: 📦 Checkout repository
@@ -28,7 +31,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           command_timeout: 30m
-          envs: BOT_TOKEN,TRASH_GROUP_ID,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,SPOTIFY_REFRESH_TOKEN,TELEGRAM_API_ID,TELEGRAM_API_HASH
+          envs: BOT_TOKEN,TRASH_GROUP_ID,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,SPOTIFY_REFRESH_TOKEN,TELEGRAM_API_ID,TELEGRAM_API_HASH,PERMANENT_ADMIN,WHITELIST_USERS,WHITELIST_GROUPS
           script: |
             echo ">>> 📥 Updating code..."
             cd ~/app || exit 1
@@ -71,6 +74,9 @@ jobs:
             LOCAL_API_URL=http://172.17.0.1:8200
             TELEGRAM_API_ID=${TELEGRAM_API_ID}
             TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+            PERMANENT_ADMIN=${PERMANENT_ADMIN}
+            WHITELIST_USERS=${WHITELIST_USERS}
+            WHITELIST_GROUPS=${WHITELIST_GROUPS}
             EOF
 
             echo ">>> 🔨 Building new Docker images..."
