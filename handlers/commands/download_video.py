@@ -1180,12 +1180,14 @@ async def download_video_command(message: Message):
         # Для множественных URL не используем один status_msg, создаем новый каждый раз
         status_msg = None
 
-    # Удаляем оригинальное сообщение если было
-    if original_msg_id:
-        try:
-            await message.bot.delete_message(message.chat.id, original_msg_id)
-        except:
-            pass
+    # Удаляем оригинальное сообщение только если это сообщение самого пользователя
+    if original_msg_id and message.reply_to_message:
+        # Проверяем что автор reply_to_message совпадает с автором команды
+        if message.reply_to_message.from_user.id == message.from_user.id:
+            try:
+                await message.bot.delete_message(message.chat.id, original_msg_id)
+            except:
+                pass
 
     # Удаляем командное сообщение
     try:
