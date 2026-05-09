@@ -424,7 +424,7 @@ async def background_extract_audio(file_path: str, audio_path: str, clean_url: s
             # Отправляем аудио в мусорную группу для кэширования
             if TRASH_GROUP_ID:
                 try:
-                    # Создаём кнопку для удаления из кэша с защитой
+                    # Создаём кнопку для удаления из кэша
                     url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:16]
                     cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="🗑️ Удалить из кэша", callback_data=secure_callback(f"clear_cache:{url_hash}"))]
