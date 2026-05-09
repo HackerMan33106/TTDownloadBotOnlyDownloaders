@@ -1589,14 +1589,17 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         for row in callback.message.reply_markup.inline_keyboard:
                             for button in row:
                                 if button.callback_data:
+                                    # Сохраняем оригинальный зашифрованный callback
+                                    original_callback = button.callback_data
                                     real_bd2 = verify_callback(button.callback_data)
                                     if real_bd2:
                                         if real_bd2.startswith("delete_parts:"):
-                                            old_delete_callback = button.callback_data
+                                            old_delete_callback = original_callback
                                         elif real_bd2.startswith("delete_video:"):
                                             # Извлекаем ID владельца из кнопки delete_video
                                             try:
                                                 original_owner_id = int(real_bd2.split(":")[1])
+                                                old_delete_callback = original_callback
                                             except:
                                                 pass
                                     if DEBUG_MODE:
@@ -1618,7 +1621,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         if old_delete_callback:
                             delete_callback = old_delete_callback
                         elif original_owner_id:
-                            delete_callback = f"delete_video:{original_owner_id}"
+                            delete_callback = secure_callback(f"delete_video:{original_owner_id}")
                         else:
                             delete_callback = "delete_message"
 

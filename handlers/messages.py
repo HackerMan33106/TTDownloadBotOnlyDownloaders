@@ -377,12 +377,12 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
                 if cached[1]:
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"send_cached_audio:{url_hash}")],
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
                     ])
                 else:
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="📥 Установленное аудио", callback_data=f"extract_audio:{url_id}")],
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
                     ])
 
                 video_data = {"url": clean_url, "chat_id": original_message.chat.id}
