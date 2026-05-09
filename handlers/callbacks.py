@@ -173,6 +173,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             if len(callback_data) > 1:
                 button_user_id = int(callback_data[1])
                 if current_user_id == button_user_id or await is_admin(current_user_id):
+                    logger.info(f"🗑️ Пользователь {current_user_id} удалил сообщение через кнопку (chat_id: {callback.message.chat.id})")
                     try:
                         await callback.message.delete()
                     except Exception:
@@ -184,6 +185,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                             pass
                     await callback.answer("✅ Удалено", show_alert=False)
                 else:
+                    logger.warning(f"🚫 Пользователь {current_user_id} попытался удалить чужое сообщение (владелец: {button_user_id})")
                     await callback.answer("❌ Вы не можете удалить это сообщение", show_alert=True)
             else:
                 await callback.answer("❌ Ошибка в данных кнопки", show_alert=True)
