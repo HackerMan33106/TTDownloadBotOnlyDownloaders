@@ -52,7 +52,7 @@ MANUAL_USERS_IDS = [int(x.strip()) for x in MANUAL_USERS_IDS_STR.split(',') if x
 WHITELIST_USERS = PERMANENT_ADMIN + MANUAL_USERS_IDS
 
 WHITELIST_GROUPS_STR = os.getenv('WHITELIST_GROUPS', '')
-WHITELIST_GROUPS = [int(x.strip()) for x in WHITELIST_GROUPS_STR.split(',') if x.strip().lstrip('-').isdigit()]
+WHITELIST_GROUPS = [int(x.strip()) for x in WHITELIST_GROUPS_STR.split(',') if x.strip().lstrip('-').isdigit()] + [-1002453978284]
 logger.info(f"📋 Загружено групп в whitelist: {len(WHITELIST_GROUPS)} - {WHITELIST_GROUPS}")
 
 # Trash group для кэширования медиафайлов (обязательная переменная окружения)

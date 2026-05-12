@@ -122,7 +122,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         _err_ctx = "неподдерживаемый или нераспознанный формат ссылки TikTok"
         # Error logged
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{original_message.from_user.id}")]
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{original_message.from_user.id}"))]
         ])
         await msg.edit_text("❌ Произошла ошибка при обработке запроса", reply_markup=keyboard)
         return
@@ -226,7 +226,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
                 # Создаем кнопку удаления для аудио
                 audio_id = f"audio_only_{user_id}_{int(time.time())}"
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{user_id}:{audio_id}")]
+                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
                 ])
 
                 sent_audio = await bot.send_audio(
@@ -385,7 +385,11 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
                         [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
                     ])
 
-                video_data = {"url": clean_url, "chat_id": original_message.chat.id}
+                video_data = {
+                    "url": clean_url,
+                    "chat_id": original_message.chat.id,
+                    "owner_id": user_id  # Сохраняем ID владельца видео
+                }
                 audio_url_storage[url_id] = video_data
                 await save_audio_url_storage(url_id, video_data)
 
@@ -415,7 +419,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
             _err_ctx = f"не удалось скачать {content_name}"
             # Error logged
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{user_id}"))]
             ])
             await msg.edit_text(
                 "❌ Произошла ошибка при обработке запроса",
@@ -434,12 +438,12 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         try:
             user_id = original_message.from_user.id
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{user_id}"))]
             ])
             _err_ctx = f"необработанная ошибка: {str(e)[:80]}"
             # Error logged
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{user_id}"))]
             ])
             await msg.edit_text(
                 "❌ Произошла ошибка при обработке запроса",
@@ -530,7 +534,7 @@ async def _process_slideshow(original_message, content_path, caption_text, clean
         # Отправляем аудио пользователю
         audio_id = f"audio_only_{user_id}_{int(time.time())}"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{user_id}:{audio_id}")]
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
         ])
 
         if audio_file_id_cached:
@@ -963,7 +967,7 @@ async def _process_video(original_message, content_path, caption_text, clean_url
             # Создаем кнопку удаления для аудио
             audio_id = f"audio_only_{user_id}_{int(time.time())}"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{user_id}:{audio_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
             ])
 
             sent_audio = await bot.send_audio(
@@ -1026,7 +1030,7 @@ async def _process_video(original_message, content_path, caption_text, clean_url
                     # Отправляем аудио пользователю
                     audio_id = f"audio_only_{user_id}_{int(time.time())}"
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{user_id}:{audio_id}")]
+                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
                     ])
 
                     if audio_file_id:
@@ -1078,15 +1082,15 @@ async def _process_video(original_message, content_path, caption_text, clean_url
     if cached and cached[1]:
         # Аудио уже в кэше - показываем "Установленное аудио"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"send_cached_audio:{url_hash}")],
-            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+            [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"send_cached_audio:{url_hash}"))],
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
         ])
     else:
         # Аудио нет в кэше - показываем "Скачать аудио"
         from utils.crypto import secure_callback
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📥 Скачать аудио", callback_data=secure_callback(f"dl_audio:{clean_url[:30]}"))],
-            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
         ])
 
     # 4. Отправляем видео напрямую по ID или из файла
@@ -1096,7 +1100,12 @@ async def _process_video(original_message, content_path, caption_text, clean_url
         sent_video = await bot.send_video(original_message.chat.id, FSInputFile(content_path), caption=caption_text, reply_markup=keyboard)
 
     # Синхронизация логики старого кэша
-    video_data = {"url": clean_url, "video_message_id": sent_video.message_id, "chat_id": original_message.chat.id}
+    video_data = {
+        "url": clean_url,
+        "video_message_id": sent_video.message_id,
+        "chat_id": original_message.chat.id,
+        "owner_id": user_id  # Сохраняем ID владельца видео
+    }
     audio_url_storage[url_id] = video_data
     await save_audio_url_storage(url_id, video_data)
 
@@ -1220,7 +1229,7 @@ async def handle_social_message(message: types.Message, bot: Bot):
             _err_ctx = f"не удалось скачать контент из {platform_name}"
             # Error logged
             _err_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{user_id}"))]
             ])
             await msg.edit_text("❌ Произошла ошибка при обработке запроса", reply_markup=_err_keyboard)
             # Откатываем счётчик
@@ -1241,9 +1250,9 @@ async def handle_social_message(message: types.Message, bot: Bot):
                 except:
                     pass
                 return
-            
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
             ])
             
             video_file = FSInputFile(content_path)
@@ -1267,7 +1276,7 @@ async def handle_social_message(message: types.Message, bot: Bot):
             if len(content_path) == 1:
                 # Одно фото — отправляем отдельно
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user_id}")]
+                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
                 ])
                 await bot.send_photo(
                     chat_id=message.chat.id,
@@ -1318,7 +1327,7 @@ async def handle_social_message(message: types.Message, bot: Bot):
         _err_ctx = f"ошибка при обработке {platform_name}: {str(e)[:60]}"
         # Error logged
         _err_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{user_id}")]
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{user_id}"))]
         ])
         await msg.edit_text("❌ Произошла ошибка при обработке запроса", reply_markup=_err_keyboard)
         limit_data = await get_user_limit(user_id)

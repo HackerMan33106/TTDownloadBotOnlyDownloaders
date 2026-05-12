@@ -54,10 +54,10 @@ def secure_callback(data: str) -> str:
 def verify_callback(callback_data: str) -> Optional[str]:
     if not callback_data:
         return callback_data
-        
+
     if callback_data.startswith("sec:"):
         short_id = callback_data[4:]
-        
+
         if short_id in _callback_cache:
             _callback_cache.move_to_end(short_id)
             return _callback_cache[short_id]
@@ -79,8 +79,8 @@ def verify_callback(callback_data: str) -> Optional[str]:
                     logger.warning(f"⚠️ Callback не найден в БД: {short_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка проверки secure_callback {short_id}: {e}")
-            
+
         return None
-        
+
     logger.warning(f"🚫 Заблокирована попытка использовать старую кнопку без подписи: {callback_data}")
     return None

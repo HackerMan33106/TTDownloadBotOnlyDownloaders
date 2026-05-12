@@ -26,10 +26,19 @@ from handlers.commands.download_video import clean_url, find_downloader
 router = Router()
 
 
-@router.callback_query(F.data.startswith(("delete_universal", "delete_ping", "delete_video", "delete_slideshow", "delete_aiogram", "delete_error", "delete_storage", "delete_bl_msg", "delete_check", "delete_cookies", "delete_help_msg", "delete_stats_msg", "delete_message", "delete_parts", "show_cookies_copy", "extract_audio", "delete_audio", "send_slideshow_audio", "send_cached_audio", "dl_audio", "cleanup_temp", "explain_error", "clear_cache", "storage_auto")))
+@router.callback_query(F.data.startswith(("delete_universal", "delete_ping", "delete_video", "delete_slideshow", "delete_aiogram", "delete_error", "delete_storage", "delete_bl_msg", "delete_check", "delete_cookies", "delete_help_msg", "delete_stats_msg", "delete_message", "delete_parts", "show_cookies_copy", "extract_audio", "delete_audio", "send_slideshow_audio", "send_cached_audio", "dl_audio", "cleanup_temp", "explain_error", "clear_cache", "storage_auto", "sec")))
 async def button_callback(callback: types.CallbackQuery, bot: Bot):
     """Обработчик всех callback-кнопок"""
-    callback_data = callback.data.split(":")
+    # Расшифровываем callback_data если он зашифрован
+    raw_data = callback.data
+    if raw_data.startswith("sec:"):
+        decrypted_data = verify_callback(raw_data)
+        if decrypted_data is None:
+            await callback.answer("❌ Недействительная кнопка", show_alert=True)
+            return
+        raw_data = decrypted_data
+
+    callback_data = raw_data.split(":")
     action = callback_data[0]
     current_user_id = callback.from_user.id
 
@@ -404,7 +413,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             text += f"  Файлов: {temp_files}\n"
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_storage:{callback.message.message_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_storage:{callback.message.message_id}"))]
             ])
             
             await callback.message.edit_text(text, reply_markup=keyboard)
@@ -475,12 +484,27 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             )
 
             # Сохраняем информацию об отправленном аудио
+            # Получаем owner_id из исходной кнопки delete_video
+            video_owner_id = user.id
+            if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                for row in callback.message.reply_markup.inline_keyboard:
+                    for btn in row:
+                        if btn.callback_data:
+                            real_bd = verify_callback(btn.callback_data)
+                            if real_bd and real_bd.startswith("delete_video:"):
+                                try:
+                                    video_owner_id = int(real_bd.split(":")[1])
+                                except:
+                                    pass
+                                break
+            
             audio_data = {
                 "message_id": sent_audio.message_id,
                 "chat_id": chat_id,
                 "file_id": audio_file_id,
                 "video_message_id": video_message_id,
-                "url_hash": hash_val
+                "url_hash": hash_val,
+                "owner_id": video_owner_id  # Сохраняем ID владельца видео
             }
             audio_downloaded[audio_id] = audio_data
             await save_audio_downloaded(audio_id, audio_data)
@@ -490,9 +514,24 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                 clean_chat_id = str(chat_id)[4:]
                 audio_link = f"https://t.me/c/{clean_chat_id}/{sent_audio.message_id}"
 
+                # Кнопка удаления видео доступна только автору видео
+                # Получаем ID автора из исходной кнопки delete_video
+                video_owner_id = user.id
+                if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                    for row in callback.message.reply_markup.inline_keyboard:
+                        for btn in row:
+                            if btn.callback_data:
+                                real_bd = verify_callback(btn.callback_data)
+                                if real_bd and real_bd.startswith("delete_video:"):
+                                    try:
+                                        video_owner_id = int(real_bd.split(":")[1])
+                                    except:
+                                        pass
+                                    break
+                        
                 new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🎵 Аудио", url=audio_link)],
-                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{user.id}")]
+                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{video_owner_id}"))]
                 ])
 
                 await callback.message.edit_reply_markup(reply_markup=new_keyboard)
@@ -555,7 +594,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             )
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_error:{original_user_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{original_user_id}"))]
             ])
             await callback.message.reply(explanation, reply_markup=keyboard)
         except Exception as e:
@@ -705,7 +744,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                                     if audio_msg_id:
                                         # Создаем новую клавиатуру без кнопки "Оригинальное видео"
                                         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                                            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{original_user_id}:{audio_id}")]
+                                            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{original_user_id}:{audio_id}"))]
                                         ])
                                         await bot.edit_message_reply_markup(
                                             chat_id=audio_data["chat_id"],
@@ -753,9 +792,27 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         # Восстанавливаем кнопку "Установленное аудио" для кэшированного аудио
                         if is_cached_audio and url_hash and "video_message_id" in audio_data:
                             try:
+                                # Восстанавливаем кнопку с ID владельца видео (не текущего пользователя)
+                                # Сначала пытаемся получить owner_id из audio_data (если сохранен)
+                                video_owner_id = audio_data.get("owner_id") or original_user_id
+                        
+                                # Если не нашли, пытаемся извлечь из исходной кнопки
+                                if not audio_data.get("owner_id"):
+                                    if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                                        for row in callback.message.reply_markup.inline_keyboard:
+                                            for btn in row:
+                                                if btn.callback_data:
+                                                    real_bd = verify_callback(btn.callback_data)
+                                                    if real_bd and real_bd.startswith("delete_video:"):
+                                                        try:
+                                                            video_owner_id = int(real_bd.split(":")[1])
+                                                        except:
+                                                            pass
+                                                        break
+                                
                                 new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                                    [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"send_cached_audio:{url_hash}")],
-                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{original_user_id}")]
+                                    [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"send_cached_audio:{url_hash}"))],
+                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{video_owner_id}"))]
                                 ])
                                 await bot.edit_message_reply_markup(
                                     chat_id=audio_data["chat_id"],
@@ -781,9 +838,27 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         if is_tiktok:
                             storage_data = audio_url_storage[audio_id]
                             try:
+                                # Восстанавливаем кнопку с ID владельца видео
+                                # Сначала пытаемся получить owner_id из storage_data
+                                video_owner_id = storage_data.get("owner_id") or original_user_id
+                        
+                                # Если не нашли, пытаемся извлечь из исходной кнопки
+                                if not storage_data.get("owner_id"):
+                                    if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                                        for row in callback.message.reply_markup.inline_keyboard:
+                                            for btn in row:
+                                                if btn.callback_data:
+                                                    real_bd = verify_callback(btn.callback_data)
+                                                    if real_bd and real_bd.startswith("delete_video:"):
+                                                        try:
+                                                            video_owner_id = int(real_bd.split(":")[1])
+                                                        except:
+                                                            pass
+                                                        break
+                        
                                 new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                                    [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"extract_audio:{audio_id}")],
-                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{original_user_id}")]
+                                    [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"extract_audio:{audio_id}"))],
+                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{video_owner_id}"))]
                                 ])
                                 await bot.edit_message_reply_markup(
                                     chat_id=storage_data["chat_id"],
@@ -1000,9 +1075,17 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                     reply_markup=keyboard
                 )
                 
+                # Получаем owner_id из storage если есть
+                video_owner_id = original_user_id
+                if url_id in audio_url_storage:
+                    storage_data = audio_url_storage[url_id]
+                    if isinstance(storage_data, dict):
+                        video_owner_id = storage_data.get("owner_id", original_user_id)
+                
                 downloaded_data = {
                     "message_id": sent_audio.message_id,
-                    "chat_id": callback.message.chat.id
+                    "chat_id": callback.message.chat.id,
+                    "owner_id": video_owner_id  # Сохраняем ID владельца видео
                 }
                 audio_downloaded[url_id] = downloaded_data
                 await save_audio_downloaded(url_id, downloaded_data)
@@ -1029,10 +1112,24 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                                 if DEBUG_MODE:
                                     logger.info(f"🔍 DEBUG: Создана ссылка: {audio_link}")
                                     logger.info(f"🔍 DEBUG: Обновляем кнопку для chat_id={storage_data['chat_id']}, message_id={storage_data['video_message_id']}")
+
+                                # Получаем ID владельца видео из исходной кнопки
+                                video_owner_id = original_user_id
+                                if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                                    for row in callback.message.reply_markup.inline_keyboard:
+                                        for btn in row:
+                                            if btn.callback_data:
+                                                real_bd = verify_callback(btn.callback_data)
+                                                if real_bd and real_bd.startswith("delete_video:"):
+                                                    try:
+                                                        video_owner_id = int(real_bd.split(":")[1])
+                                                    except:
+                                                        pass
+                                                    break
                                 
                                 new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="Установленное аудио", url=audio_link)],
-                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_video:{original_user_id}")]
+                                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{video_owner_id}"))]
                                 ])
                                 
                                 await bot.edit_message_reply_markup(
@@ -1251,10 +1348,18 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         reply_markup=keyboard
                     )
                 
+                # Получаем owner_id из storage
+                video_owner_id = original_user_id
+                if audio_id in audio_url_storage:
+                    storage_data = audio_url_storage[audio_id]
+                    if isinstance(storage_data, dict):
+                        video_owner_id = storage_data.get("owner_id", original_user_id)
+                
                 downloaded_data = {
                     "message_id": sent_audio.message_id,
                     "chat_id": callback.message.chat.id,
-                    "download_requester_id": current_user_id
+                    "download_requester_id": current_user_id,
+                    "owner_id": video_owner_id  # Сохраняем ID владельца видео
                 }
                 audio_downloaded[audio_id] = downloaded_data
                 await save_audio_downloaded(audio_id, downloaded_data)
@@ -1353,10 +1458,25 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                 )
 
                 # Сохраняем информацию об аудио для возможности удаления
+                # Получаем owner_id из исходной кнопки delete_video
+                video_owner_id = callback.from_user.id
+                if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                    for row in callback.message.reply_markup.inline_keyboard:
+                        for btn in row:
+                            if btn.callback_data:
+                                real_bd = verify_callback(btn.callback_data)
+                                if real_bd and real_bd.startswith("delete_video:"):
+                                    try:
+                                        video_owner_id = int(real_bd.split(":")[1])
+                                    except:
+                                        pass
+                                    break
+                
                 audio_data = {
                     "message_id": sent_audio.message_id,
                     "chat_id": callback.message.chat.id,
-                    "file_id": sent_audio.audio.file_id if sent_audio.audio else None
+                    "file_id": sent_audio.audio.file_id if sent_audio.audio else None,
+                    "owner_id": video_owner_id  # Сохраняем ID владельца видео
                 }
                 audio_downloaded[audio_id] = audio_data
                 await save_audio_downloaded(audio_id, audio_data)
@@ -1559,6 +1679,20 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                             break
                 
                 # Сохраняем информацию о скачанном аудио
+                # Получаем owner_id из исходной кнопки delete_video или delete_parts
+                video_owner_id = callback.from_user.id
+                if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                    for row in callback.message.reply_markup.inline_keyboard:
+                        for btn in row:
+                            if btn.callback_data:
+                                real_bd = verify_callback(btn.callback_data)
+                                if real_bd and real_bd.startswith("delete_video:"):
+                                    try:
+                                        video_owner_id = int(real_bd.split(":")[1])
+                                    except:
+                                        pass
+                                    break
+                
                 downloaded_data = {
                     "message_id": sent_audio.message_id,
                     "chat_id": callback.message.chat.id,
@@ -1566,7 +1700,8 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                     "video_message_id": callback.message.message_id,  # Сохраняем ID исходного видео
                     "video_url": url,  # Сохраняем URL для восстановления кнопки
                     "delete_callback": old_delete_callback,  # Сохраняем callback кнопки удаления для разделенных видео
-                    "delete_button_text": old_delete_button_text  # Сохраняем текст кнопки
+                    "delete_button_text": old_delete_button_text,  # Сохраняем текст кнопки
+                    "owner_id": video_owner_id  # Сохраняем ID владельца видео
                 }
                 audio_downloaded[url_id] = downloaded_data
                 await save_audio_downloaded(url_id, downloaded_data)
@@ -1625,6 +1760,31 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                         else:
                             delete_callback = "delete_message"
 
+                        # Получаем ID владельца видео из исходной кнопки delete_video или delete_parts
+                        video_owner_id = callback.from_user.id
+                        if callback.message.reply_markup and callback.message.reply_markup.inline_keyboard:
+                            for row in callback.message.reply_markup.inline_keyboard:
+                                for btn in row:
+                                    if btn.callback_data:
+                                        real_bd = verify_callback(btn.callback_data)
+                                        if real_bd and (real_bd.startswith("delete_video:") or real_bd.startswith("delete_parts:")):
+                                            try:
+                                                # Для delete_video формат: delete_video:user_id
+                                                # Для delete_parts формат: delete_parts:msg_ids:last (owner_id не передается)
+                                                if real_bd.startswith("delete_video:"):
+                                                    video_owner_id = int(real_bd.split(":")[1])
+                                            except:
+                                                pass
+                                            break
+                        
+                        # Обновляем delete_callback с правильным owner_id
+                        if old_delete_callback:
+                            delete_callback = old_delete_callback
+                        elif original_owner_id:
+                            delete_callback = secure_callback(f"delete_video:{video_owner_id}")
+                        else:
+                            delete_callback = secure_callback(f"delete_video:{video_owner_id}")
+                        
                         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                             [InlineKeyboardButton(text="🎵 Аудио", url=audio_link)],
                             [InlineKeyboardButton(text="🗑 Удалить все части" if old_delete_callback else "🗑 Удалить", callback_data=delete_callback)]

@@ -525,7 +525,7 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                 import time
                 audio_id_key = f"audio_only_{message.from_user.id}_{int(time.time())}"
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{message.from_user.id}:{audio_id_key}")]
+                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id_key}"))]
                 ])
 
                 # Создаем caption для аудио через атрибут -a (без названия видео)
@@ -750,7 +750,7 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
             import time
             audio_id = f"audio_only_{message.from_user.id}_{int(time.time())}"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{message.from_user.id}:{audio_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id}"))]
             ])
 
             # Создаем caption для аудио через атрибут -a (без названия видео)
@@ -870,8 +870,8 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                         buttons = []
                         if not is_music:
                             short_url = url[:30] if len(url) > 30 else url
-                            buttons.append([InlineKeyboardButton(text="🎵 Скачать полное аудио", callback_data=f"dl_audio:{short_url}")])
-                        buttons.append([InlineKeyboardButton(text="🗑 Удалить все части", callback_data=f"delete_parts:{all_msg_ids}:last")])
+                            buttons.append([InlineKeyboardButton(text="🎵 Скачать полное аудио", callback_data=secure_callback(f"dl_audio:{short_url}"))])
+                        buttons.append([InlineKeyboardButton(text="🗑 Удалить все части", callback_data=secure_callback(f"delete_parts:{all_msg_ids}:last"))])
                         
                         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
                         
@@ -925,7 +925,7 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
             import time
             audio_id = f"audio_only_{message.from_user.id}_{int(time.time())}"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_audio:{message.from_user.id}:{audio_id}")]
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id}"))]
             ])
 
             # Создаем caption для музыкального файла (без названия)
