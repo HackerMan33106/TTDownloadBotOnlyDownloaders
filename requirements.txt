@@ -1,8 +1,10 @@
+# Updated: 2026-05-13 - Security fixes and cookies update
 aiogram==3.15.0
 pydantic==2.9.2
 pydantic_core==2.23.4
 pillow==10.4.0
 yt-dlp
+curl-cffi>=0.7.4
 gallery_dl==1.31.2
 spotdl==4.4.3
 ffmpeg-python==0.2.0
