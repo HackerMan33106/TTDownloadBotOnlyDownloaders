@@ -237,6 +237,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     
     if action in ["delete_ping", "delete_aiogram", "delete_storage", "delete_check", "delete_cookies", "delete_help_msg", "delete_stats_msg", "delete_message"]:
         try:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             await callback.message.delete()
             await callback.answer("✅ Удалено", show_alert=False)
             # Формат: action:original_message_id
@@ -251,9 +255,13 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     elif action == "delete_parts":
         # Формат: delete_parts:msg_id1,msg_id2,msg_id3 или delete_parts:msg_id1,msg_id2,msg_id3:last
         try:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             if DEBUG_MODE:
                 logger.info(f"🗑 delete_parts вызван: callback_data={callback_data}, len={len(callback_data)}")
-            
+
             if len(callback_data) > 1:
                 msg_ids = callback_data[1].split(',')
                 if DEBUG_MODE:
@@ -295,6 +303,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     
     elif action == "delete_bl_msg":
         try:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             if len(callback_data) > 1:
                 button_user_id = int(callback_data[1])
                 if current_user_id == button_user_id or await is_admin(current_user_id):
@@ -315,6 +327,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     
     elif action in ["delete_admin_msg", "delete_wl_msg"]:
         try:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             if len(callback_data) > 1:
                 button_user_id = int(callback_data[1])
                 if current_user_id == button_user_id or await is_admin(current_user_id):
@@ -604,6 +620,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     elif action == "delete_error":
         if len(callback_data) > 1:
             try:
+                # Логируем нажатие на кнопку "Удалить"
+                user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+                logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
                 original_user_id = int(callback_data[1])
                 if await is_admin(current_user_id) or current_user_id == original_user_id:
                     try:
@@ -625,6 +645,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     
     elif action in ["delete_video", "delete_slideshow"]:
         if len(callback_data) > 1:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             original_user_id = int(callback_data[1])
             if await is_admin(current_user_id) or current_user_id == original_user_id:
                 try:
@@ -760,6 +784,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
 
     elif action == "delete_audio":
         if len(callback_data) > 1:
+            # Логируем нажатие на кнопку "Удалить"
+            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+
             original_user_id = int(callback_data[1])
             audio_id = callback_data[2] if len(callback_data) > 2 else None
 
