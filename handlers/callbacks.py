@@ -29,6 +29,9 @@ router = Router()
 @router.callback_query(F.data.startswith(("delete_universal", "delete_ping", "delete_video", "delete_slideshow", "delete_aiogram", "delete_error", "delete_storage", "delete_bl_msg", "delete_check", "delete_cookies", "delete_help_msg", "delete_stats_msg", "delete_message", "delete_parts", "show_cookies_copy", "extract_audio", "delete_audio", "send_slideshow_audio", "send_cached_audio", "dl_audio", "cleanup_temp", "explain_error", "clear_cache", "storage_auto", "sec")))
 async def button_callback(callback: types.CallbackQuery, bot: Bot):
     """Обработчик всех callback-кнопок"""
+    # Логируем ВСЕ нажатия кнопок для отладки
+    logger.info(f"🔘 Кнопка нажата: raw_data = {callback.data[:100]}")
+
     # Расшифровываем callback_data если он зашифрован
     raw_data = callback.data
     if raw_data.startswith("sec:"):
@@ -37,10 +40,13 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             await callback.answer("❌ Недействительная кнопка", show_alert=True)
             return
         raw_data = decrypted_data
+        logger.info(f"🔓 Расшифровано: {raw_data}")
 
     callback_data = raw_data.split(":")
     action = callback_data[0]
     current_user_id = callback.from_user.id
+
+    logger.info(f"🎯 action = {action}, callback_data = {callback_data}, user_id = {current_user_id}")
 
     # Обработчик удаления из кэша
     if action == "clear_cache":
@@ -349,94 +355,6 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
         except Exception:
             await callback.answer("❌ Не удалось удалить", show_alert=True)
     
-    elif action == "show_cookies_copy":
-        logger.info(f"📋 Запрос на копирование cookies от {current_user_id}")
-        try:
-            if current_user_id not in PERMANENT_ADMIN:
-                await callback.answer("❌ Нет доступа", show_alert=True)
-                return
-            await callback.answer("⏳ Загружаю...", show_alert=False)
-            
-            if len(callback_data) > 1:
-                button_user_id = int(callback_data[1])
-                if current_user_id != button_user_id:
-                    await callback.answer("❌ Нет доступа", show_alert=True)
-                    return
-            
-            if os.path.exists(COOKIES_PATH):
-                with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                logger.info(f"📋 Отправка cookies ({len(content)} символов)")
-                
-                if len(content) > 3500:
-                    input_file = FSInputFile(COOKIES_PATH, filename='cookies_copy.txt')
-                    await callback.message.reply_document(
-                        document=input_file,
-                        caption="📋 Содержимое cookies.txt для копирования"
-                    )
-                else:
-                    await callback.message.reply(
-                        f"📋 Содержимое cookies.txt для копирования:\n\n```\n{content}\n```",
-                        parse_mode="Markdown"
-                    )
-                
-                await callback.answer("✅ Отправлено", show_alert=False)
-            else:
-                await callback.answer("❌ Файл не найден", show_alert=True)
-        except Exception as e:
-            logger.error(f"❌ Ошибка в show_cookies_copy: {e}")
-            await callback.answer(f"❌ Ошибка: {str(e)[:100]}", show_alert=True)
-    
-    elif action == "cleanup_temp":
-        if not await is_admin(callback.from_user.id):
-            await callback.answer("❌ Нет доступа", show_alert=True)
-            return
-        
-        try:
-            await callback.answer("🧹 Очистка...", show_alert=False)
-            
-            cleanup_old_temp_files()
-            
-            # Очищаем журналы systemd (только на Linux с правами sudo)
-            try:
-                if platform.system() == "Linux":
-                    process = await asyncio.create_subprocess_exec(
-                        "sudo", "-n", "journalctl", "--vacuum-size=200M",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    stdout, stderr = await process.communicate()
-                    if process.returncode == 0:
-                        logger.info("🧹 Журналы systemd очищены (лимит 200MB)")
-            except (FileNotFoundError, PermissionError):
-                logger.info("ℹ️ Пропущена очистка журналов systemd (нет sudo или прав)")
-            except Exception:
-                pass
-            
-            disk = get_disk_usage()
-            temp_size, temp_files = get_temp_dir_size()
-            temp_mb = temp_size / (1024 * 1024)
-            
-            text = "✅ Очистка завершена!\n\n📊 Текущее состояние:\n\n"
-            
-            if disk:
-                text += f"💾 Диск:\n"
-                text += f"  Свободно: {disk['free_gb']:.1f} GB ({100 - disk['used_percent']:.1f}%)\n\n"
-            
-            text += f"📁 Временные файлы:\n"
-            text += f"  Размер: {temp_mb:.1f} MB\n"
-            text += f"  Файлов: {temp_files}\n"
-            
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_storage:{callback.message.message_id}"))]
-            ])
-            
-            await callback.message.edit_text(text, reply_markup=keyboard)
-        except Exception as e:
-            logger.error(f"❌ Ошибка очистки: {e}")
-            await callback.answer("❌ Ошибка очистки", show_alert=True)
-    
     elif action == "send_cached_audio":
         hash_val = callback_data[1] if len(callback_data) > 1 else ""
         cached = await get_media_cache(hash_val)
@@ -644,12 +562,14 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             await callback.answer("❌ Ошибка при удалении", show_alert=True)
     
     elif action in ["delete_video", "delete_slideshow"]:
-        if len(callback_data) > 1:
-            # Логируем нажатие на кнопку "Удалить"
-            user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
-            logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+        # Логируем нажатие на кнопку "Удалить"
+        user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
+        logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
+        logger.info(f"🔍 DEBUG: callback_data = {callback_data}, len = {len(callback_data)}")
 
+        if len(callback_data) > 1:
             original_user_id = int(callback_data[1])
+            logger.info(f"🔍 DEBUG: original_user_id = {original_user_id}, current_user_id = {current_user_id}")
             if await is_admin(current_user_id) or current_user_id == original_user_id:
                 try:
                     if action == "delete_slideshow":
@@ -781,6 +701,10 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
                     logger.error(f"❌ Ошибка при удалении {action}: {e}")
             else:
                 await callback.answer(get_random_deny_message(), show_alert=True)
+        else:
+            # Если callback_data не содержит user_id - это ошибка или старая кнопка
+            logger.error(f"❌ Кнопка delete_video без user_id! callback_data = {callback_data}")
+            await callback.answer("❌ Ошибка: кнопка создана неправильно", show_alert=True)
 
     elif action == "delete_audio":
         if len(callback_data) > 1:

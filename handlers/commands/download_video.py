@@ -406,7 +406,7 @@ async def extract_audio_simple(video_path: str, audio_path: str, status_msg: Mes
         return False
 
 
-async def background_extract_audio(file_path: str, audio_path: str, clean_url: str, video_file_id: str, bot, chat_id: int = None, video_message_id: int = None, video_title: str = None):
+async def background_extract_audio(file_path: str, audio_path: str, clean_url: str, video_file_id: str, bot, chat_id: int = None, video_message_id: int = None, video_title: str = None, user_id: int = None):
     """Фоновая задача для извлечения и кэширования аудио"""
     try:
         from database.db import set_media_cache
@@ -453,7 +453,7 @@ async def background_extract_audio(file_path: str, audio_path: str, clean_url: s
                             # Создаем новую клавиатуру с кнопкой "Установленное аудио"
                             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                                 [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"send_cached_audio:{url_hash}"))],
-                                [InlineKeyboardButton(text="🗑 Удалить", callback_data=secure_callback("delete_message"))]
+                                [InlineKeyboardButton(text="🗑 Удалить", callback_data=secure_callback(f"delete_video:{user_id}") if user_id else secure_callback("delete_message"))]
                             ])
 
                             await bot.edit_message_reply_markup(
@@ -1005,7 +1005,8 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                     bot=message.bot,
                     chat_id=message.chat.id,
                     video_message_id=sent_video.message_id,
-                    video_title=result['title']
+                    video_title=result['title'],
+                    user_id=message.from_user.id
                 ))
         
         # Удаляем статусное сообщение

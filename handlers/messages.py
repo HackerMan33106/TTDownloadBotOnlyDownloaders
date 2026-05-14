@@ -1136,7 +1136,8 @@ async def _process_video(original_message, content_path, caption_text, clean_url
             bot=bot,
             chat_id=original_message.chat.id,
             video_message_id=sent_video.message_id,
-            video_title="Аудио"
+            video_title="Аудио",
+            user_id=user_id
         ))
 
     await msg.delete()
