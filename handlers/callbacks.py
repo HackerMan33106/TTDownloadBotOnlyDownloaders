@@ -30,7 +30,7 @@ router = Router()
 async def button_callback(callback: types.CallbackQuery, bot: Bot):
     """Обработчик всех callback-кнопок"""
     # Логируем ВСЕ нажатия кнопок для отладки
-    logger.info(f"🔘 Кнопка нажата: raw_data = {callback.data[:100]}")
+    #logger.info(f"🔘 Кнопка нажата: raw_data = {callback.data[:100]}")
 
     # Расшифровываем callback_data если он зашифрован
     raw_data = callback.data
@@ -46,7 +46,7 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
     action = callback_data[0]
     current_user_id = callback.from_user.id
 
-    logger.info(f"🎯 action = {action}, callback_data = {callback_data}, user_id = {current_user_id}")
+    #logger.info(f"🎯 action = {action}, callback_data = {callback_data}, user_id = {current_user_id}")
 
     # Обработчик удаления из кэша
     if action == "clear_cache":
@@ -505,36 +505,6 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
             logger.error(f"❌ Ошибка отправки кэшированного аудио: {e}")
             await callback.answer("❌ Ошибка отправки", show_alert=True)
                 
-    elif action == "explain_error":
-        # Формат: explain_error:KEY  (KEY — 8-символьный hex из utils.ai_error.store_error)
-        try:
-            key = callback_data[1] if len(callback_data) > 1 else ""
-            stored = None
-
-            if stored is None:
-                await callback.answer("❌ Контекст ошибки устарел или не найден", show_alert=True)
-                return
-
-            original_user_id, err_ctx, err_url, log_ctx = stored
-
-            if original_user_id and current_user_id != original_user_id and not await is_admin(current_user_id):
-                await callback.answer("❌ Информация только для автора запроса", show_alert=True)
-                return
-
-            await callback.answer("⏳ Спрашиваю ИИ...", show_alert=False)
-
-            explanation = await asyncio.get_event_loop().run_in_executor(
-                None, get_ai_explanation, err_ctx, err_url, log_ctx
-            )
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_error:{original_user_id}"))]
-            ])
-            await callback.message.reply(explanation, reply_markup=keyboard)
-        except Exception as e:
-            logger.error(f"❌ explain_error: {e}")
-            await callback.answer("❌ Не удалось получить объяснение", show_alert=True)
-
     elif action == "delete_error":
         if len(callback_data) > 1:
             try:
@@ -565,11 +535,11 @@ async def button_callback(callback: types.CallbackQuery, bot: Bot):
         # Логируем нажатие на кнопку "Удалить"
         user_info = f"@{callback.from_user.username}" if callback.from_user.username else f"ID:{callback.from_user.id}"
         logger.info(f"🗑️ Пользователь {user_info} ({callback.from_user.id}) нажал на кнопку \"Удалить\" на сообщении {callback.message.message_id}")
-        logger.info(f"🔍 DEBUG: callback_data = {callback_data}, len = {len(callback_data)}")
+        #logger.info(f"🔍 DEBUG: callback_data = {callback_data}, len = {len(callback_data)}")
 
         if len(callback_data) > 1:
             original_user_id = int(callback_data[1])
-            logger.info(f"🔍 DEBUG: original_user_id = {original_user_id}, current_user_id = {current_user_id}")
+            #logger.info(f"🔍 DEBUG: original_user_id = {original_user_id}, current_user_id = {current_user_id}")
             if await is_admin(current_user_id) or current_user_id == original_user_id:
                 try:
                     if action == "delete_slideshow":
