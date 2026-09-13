@@ -47,16 +47,18 @@ async def blacklist_command(message: types.Message, bot: Bot):
                     "Просмотр:\n"
                     "• /bl - показать список ограниченных пользователей\n"
                     "• /bl ID|@username - проверить лимит пользователя\n\n"
-                    "Добавление лимита:\n"
-                    "• /bl -a ID количество - установить лимит по ID\n"
-                    "• /bl -a @username количество - установить лимит по username\n"
-                    "• /bl -a ID 0 - заблокировать пользователя\n\n"
-                    "Удаление лимита:\n"
-                    "• /bl -r ID - удалить по ID\n"
-                    "• /bl -r @username - удалить по username\n\n"
+                    "Добавление лимита / блокировка:\n"
+                    "• /bl -a ID [количество] - установить лимит по ID (без числа или 0 — блокировка)\n"
+                    "• /bl -a @username [количество] - установить лимит по username\n"
+                    "• /bl -a ID 0 (или /bl -a ID) - заблокировать пользователя\n\n"
+                    "Удаление лимита / разблокировка:\n"
+                    "• /bl -r ID - разблокировать по ID\n"
+                    "• /bl -r @username - разблокировать по username\n\n"
                     "Примеры:\n"
                     "• /bl -a 123456789 5 - лимит 5 использований в день\n"
-                    "• /bl -a @user 0 - заблокировать пользователя",
+                    "• /bl -a @user - заблокировать пользователя\n"
+                    "• /bl -a @user 0 - заблокировать пользователя\n"
+                    "• /bl -r @user - разблокировать пользователя",
                     parse_mode="HTML",
                     reply_markup=create_delete_button(message)
                 )
@@ -115,7 +117,7 @@ async def blacklist_command(message: types.Message, bot: Bot):
                     uname = f"@{user_info.username}" if user_info.username else None
 
                     if max_uses == 0:
-                        limit_text = "Заблокирован"
+                        limit_text = "🚫 Бот заблокирован"
                     else:
                         limit_text = f"Лимит: {current_uses}/{max_uses} в день"
 
@@ -129,7 +131,7 @@ async def blacklist_command(message: types.Message, bot: Bot):
                     db_info = await get_user_info_from_db(uid)
 
                     if max_uses == 0:
-                        limit_text = "Заблокирован"
+                        limit_text = "🚫 Бот заблокирован"
                     else:
                         limit_text = f"Лимит: {current_uses}/{max_uses} в день"
 
@@ -152,25 +154,34 @@ async def blacklist_command(message: types.Message, bot: Bot):
             await message.reply(text, parse_mode="HTML", reply_markup=create_delete_button(message))
             return
 
-        # /bl -a <ID|@username> <количество> — установить лимит
-        if args[1].lower() == '-a':
+        # /bl -a <ID|@username> [количество] — установить лимит или заблокировать
+        if args[1].lower() in ['-a', '-ф']:
             if not is_user_admin:
                 return
-            if len(args) < 4:
+            if len(args) < 3:
                 await message.reply(
                     "❌ Неверный формат\n\n"
-                    "Использование: /bl -a ID|@username количество\n"
-                    "Пример: /bl -a 123456789 5",
+                    "Использование: /bl -a ID|@username [количество]\n"
+                    "Примеры:\n"
+                    "• /bl -a @username - заблокировать пользователя\n"
+                    "• /bl -a @username 0 - заблокировать пользователя\n"
+                    "• /bl -a @username 5 - лимит 5 использований в день",
                     reply_markup=create_delete_button(message)
                 )
                 return
             
             identifier = args[2].strip()
-            try:
-                max_uses = int(args[3])
-            except ValueError:
-                await message.reply("❌ Количество должно быть числом", reply_markup=create_delete_button(message))
-                return
+            if len(args) == 3:
+                max_uses = 0
+            else:
+                try:
+                    max_uses = int(args[3])
+                    if max_uses < 0:
+                        await message.reply("❌ Количество должно быть неотрицательным числом", reply_markup=create_delete_button(message))
+                        return
+                except ValueError:
+                    await message.reply("❌ Количество должно быть числом", reply_markup=create_delete_button(message))
+                    return
             
             target_id = None
             if identifier.startswith('@'):
@@ -210,18 +221,28 @@ async def blacklist_command(message: types.Message, bot: Bot):
                     name = str(target_id)
                     uname = ""
             
-            await message.reply(
-                f"✅ Лимит установлен:\n"
-                f"👤 {name}{uname}\n"
-                f"🆔 ID: {target_id}\n"
-                f"📊 Лимит: {max_uses} использований в день",
-                parse_mode="HTML",
-                reply_markup=create_delete_button(message)
-            )
+            if max_uses == 0:
+                await message.reply(
+                    f"🚫 <b>Бот заблокирован</b>:\n"
+                    f"👤 {name}{uname}\n"
+                    f"🆔 ID: {target_id}\n"
+                    f"⛔️ Использование бота полностью заблокировано",
+                    parse_mode="HTML",
+                    reply_markup=create_delete_button(message)
+                )
+            else:
+                await message.reply(
+                    f"✅ Лимит установлен:\n"
+                    f"👤 {name}{uname}\n"
+                    f"🆔 ID: {target_id}\n"
+                    f"📊 Лимит: {max_uses} использований в день",
+                    parse_mode="HTML",
+                    reply_markup=create_delete_button(message)
+                )
             return
         
         # /bl -r <ID|@username> — удалить лимит
-        if args[1].lower() == '-r':
+        if args[1].lower() in ['-r', '-к']:
             if not is_user_admin:
                 return
             if len(args) < 3:
@@ -306,11 +327,13 @@ async def blacklist_command(message: types.Message, bot: Bot):
                 if limit_data:
                     max_uses, current_uses, _ = limit_data
                     if max_uses == 0:
-                        status = "🚫 Заблокирован"
+                        status = "🚫 Бот заблокирован (доступ закрыт)"
+                        btn_text = "🔓 Разблокировать"
                     else:
                         time_until_reset = get_time_until_reset()
                         status = f"🔒 Лимит: {current_uses}/{max_uses} в день\n⏰ Сброс: {time_until_reset}"
-                    buttons.append([InlineKeyboardButton(text="🔓 Удалить лимит", callback_data=f"bl_action:remove:{target_id}:{message.message_id}")])
+                        btn_text = "🔓 Удалить лимит"
+                    buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"bl_action:remove:{target_id}:{message.message_id}")])
                 else:
                     status = "✅ Без ограничений"
                     buttons.append([InlineKeyboardButton(text="🔒 Ограничить", callback_data=f"bl_action:ask_limit:{target_id}:{message.message_id}")])

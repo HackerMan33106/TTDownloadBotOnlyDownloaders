@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 import yt_dlp
 
-from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, download_images_via_gallery_dl
+from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, download_images_via_gallery_dl, get_readonly_cookies_path
 from config.settings import logger
 
 
@@ -21,6 +21,7 @@ class VKDownloader(BaseDownloader):
         return ['vk.com', 'vk.ru', 'vkvideo.ru']
     
     async def download(self, url: str, output_dir: str, progress_hook: Callable = None) -> Optional[Dict[str, Any]]:
+        cookies_copy = None
         try:
             output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
             opts = {
@@ -33,12 +34,12 @@ class VKDownloader(BaseDownloader):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
             }
-            
+
             # Подключаем cookies для VK (авторизация/капча)
-            cookies_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'cookies.txt')
-            if os.path.exists(cookies_path):
-                opts['cookiefile'] = cookies_path
-            
+            cookies_copy = get_readonly_cookies_path()
+            if cookies_copy:
+                opts['cookiefile'] = cookies_copy
+
             if progress_hook:
                 opts['progress_hooks'] = [progress_hook]
             
@@ -61,3 +62,6 @@ class VKDownloader(BaseDownloader):
             # Фоллбек на gallery-dl для фото
             logger.info("VK: пробуем gallery-dl для фото...")
             return download_images_via_gallery_dl(url, output_dir)
+        finally:
+            if cookies_copy and os.path.exists(cookies_copy):
+                os.remove(cookies_copy)

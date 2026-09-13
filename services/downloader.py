@@ -8,16 +8,17 @@ import subprocess
 import yt_dlp
 
 from config.settings import (
-    TEMP_DIR, 
-    COOKIES_PATH, 
-    MAX_DOWNLOAD_RETRIES, 
+    TEMP_DIR,
+    MAX_DOWNLOAD_RETRIES,
     logger
 )
+from services.downloaders.base import get_readonly_cookies_path
 from utils.tiktok import is_retryable_error, is_tiktok_slideshow
 
 
 async def download_slideshow_sync(url: str, attempt: int = 1):
     """Скачивание слайдшоу через gallery-dl (async функция)"""
+    cookies_copy = None
     try:
         slideshow_id = os.urandom(4).hex()
         output_dir = TEMP_DIR / f"slideshow_{slideshow_id}"
@@ -30,12 +31,9 @@ async def download_slideshow_sync(url: str, attempt: int = 1):
         ]
 
         # Добавляем cookies если файл существует (для обхода возрастного ограничения)
-        if os.path.exists(COOKIES_PATH):
-            cookies_size = os.path.getsize(COOKIES_PATH)
-            logger.info(f"🍪 gallery-dl: Используем cookies из {COOKIES_PATH} ({cookies_size} байт)")
-            command.extend(["--cookies", COOKIES_PATH])
-        else:
-            logger.warning(f"⚠️ gallery-dl: Cookies не найдены: {COOKIES_PATH}")
+        cookies_copy = get_readonly_cookies_path()
+        if cookies_copy:
+            command.extend(["--cookies", cookies_copy])
 
         command.append(url)
 
@@ -101,15 +99,19 @@ async def download_slideshow_sync(url: str, attempt: int = 1):
             await asyncio.sleep(3)
             return await download_slideshow_sync(url, attempt + 1)
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 def download_slideshow_with_ytdlp(url: str, attempt: int = 1):
     """Альтернативный метод скачивания слайдшоу через yt-dlp"""
+    cookies_copy = None
     try:
         slideshow_id = os.urandom(4).hex()
         output_dir = TEMP_DIR / f"slideshow_ytdlp_{slideshow_id}"
         output_dir.mkdir(exist_ok=True)
-        
+
         ydl_opts = {
             'format': 'best',
             'outtmpl': str(output_dir / '%(autonumber)s.%(ext)s'),
@@ -121,15 +123,12 @@ def download_slideshow_with_ytdlp(url: str, attempt: int = 1):
             },
             'socket_timeout': 60
         }
-        
+
         # Добавляем cookies если файл существует (для обхода возрастного ограничения)
-        if os.path.exists(COOKIES_PATH):
-            cookies_size = os.path.getsize(COOKIES_PATH)
-            logger.info(f"🍪 Используем cookies из {COOKIES_PATH} ({cookies_size} байт)")
-            ydl_opts['cookiefile'] = str(COOKIES_PATH)
-        else:
-            logger.warning(f"⚠️ Cookies не найдены: {COOKIES_PATH}")
-        
+        cookies_copy = get_readonly_cookies_path()
+        if cookies_copy:
+            ydl_opts['cookiefile'] = cookies_copy
+
         logger.info(f"🔄 Пробуем yt-dlp для слайдшоу: {url} (попытка {attempt}/{MAX_DOWNLOAD_RETRIES})")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -164,16 +163,20 @@ def download_slideshow_with_ytdlp(url: str, attempt: int = 1):
             time.sleep(3)
             return download_slideshow_with_ytdlp(url, attempt + 1)
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 def download_video_sync(url: str, attempt: int = 1):
     """Скачивание видео через yt-dlp (синхронная функция)"""
+    cookies_copy = None
     try:
         video_id = os.urandom(4).hex()
         output_path = TEMP_DIR / f"tiktok_{video_id}"
-        
+
         ydl_opts = {
-            'format': 'best[ext=mp4]/best',
+            'format': 'best[vcodec!=hevc][vcodec!=h265]/best[vcodec=h264]/best[vcodec=avc1]/best',
             'outtmpl': str(output_path) + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
@@ -182,15 +185,12 @@ def download_video_sync(url: str, attempt: int = 1):
             },
             'socket_timeout': 60
         }
-        
+
         # Добавляем cookies если файл существует (для обхода возрастного ограничения)
-        if os.path.exists(COOKIES_PATH):
-            cookies_size = os.path.getsize(COOKIES_PATH)
-            logger.info(f"🍪 Используем cookies из {COOKIES_PATH} ({cookies_size} байт)")
-            ydl_opts['cookiefile'] = str(COOKIES_PATH)
-        else:
-            logger.warning(f"⚠️ Cookies не найдены: {COOKIES_PATH}")
-        
+        cookies_copy = get_readonly_cookies_path()
+        if cookies_copy:
+            ydl_opts['cookiefile'] = cookies_copy
+
         logger.info(f"🎥 Скачивание видео из {url} (попытка {attempt}/{MAX_DOWNLOAD_RETRIES})")
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -227,6 +227,9 @@ def download_video_sync(url: str, attempt: int = 1):
             time.sleep(3)
             return download_video_sync(url, attempt + 1)
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 async def download_slideshow(url: str):

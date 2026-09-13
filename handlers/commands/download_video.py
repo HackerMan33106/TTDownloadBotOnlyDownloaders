@@ -31,6 +31,7 @@ from utils.helpers import create_delete_button, create_media_caption
 from utils.progress import DownloadProgress
 from services.downloaders.base import is_safe_url
 from database.audio import audio_downloaded
+from database.limits import is_blacklisted
 
 router = Router(name="download_video")
 
@@ -347,11 +348,15 @@ async def extract_audio_simple(video_path: str, audio_path: str, status_msg: Mes
         # Мониторим stderr для логирования прогресса
         last_log_time = start_time
 
+        stderr_lines = []
+
         def monitor_progress():
             nonlocal last_log_time
             current_time = 0
 
             for line in process.stderr:
+                stderr_lines.append(line.strip())
+
                 # Ищем строку с временем обработки
                 if line.startswith('out_time='):
                     try:
@@ -394,10 +399,19 @@ async def extract_audio_simple(video_path: str, audio_path: str, status_msg: Mes
         if success and DEBUG_MODE:
             logger.info(f"✅ Аудио извлечено за {int(elapsed)}s: {os.path.getsize(audio_path)/(1024*1024):.1f}MB")
         elif not success:
+            # Собираем stderr для диагностики
+            stderr_text = '\n'.join(stderr_lines[-20:]) if stderr_lines else "(stderr пуст)"
+
             if process.returncode != 0:
                 logger.error(f"❌ Ошибка извлечения аудио (код: {process.returncode})")
+                logger.error(f"FFmpeg stderr (последние 20 строк):\n{stderr_text}")
+
+                # Проверяем на отсутствие аудиодорожки
+                if any('does not contain any stream' in line.lower() or 'no audio' in line.lower() for line in stderr_lines):
+                    logger.warning(f"⚠️ Видео не содержит аудиодорожку")
             else:
                 logger.error(f"❌ Файл аудио не создан: {audio_path} (код: {process.returncode})")
+                logger.error(f"FFmpeg stderr:\n{stderr_text}")
 
         return success
 
@@ -1064,7 +1078,17 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
 
 @router.message(Command("dw"))
 async def download_video_command(message: Message):
-    """Обработчик команды /dw <url> - поддерживает множественные URL и флаг -a для аудио"""
+    # Проверяем, не заблокирован ли пользователь
+    if message.from_user and await is_blacklisted(message.from_user.id):
+        await message.reply(
+            "🚫 Использование бота для вас заблокировано.",
+            reply_markup=create_delete_button(message)
+        )
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
 
     urls = []
     original_msg_id = None

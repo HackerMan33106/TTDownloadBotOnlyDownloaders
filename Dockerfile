@@ -6,9 +6,13 @@ FROM python:3.11.0 as base
 
 # Устанавливаем системные зависимости (ffmpeg для извлечения аудио)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg unzip curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Устанавливаем Deno (JS-runtime, нужен yt-dlp для решения JS-challenge YouTube)
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+ENV PATH="/usr/local/bin:${PATH}"
 
 WORKDIR /app
 

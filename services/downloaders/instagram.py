@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 import yt_dlp
 
-from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, download_images_via_gallery_dl
+from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, download_images_via_gallery_dl, get_readonly_cookies_path
 from config.settings import logger
 
 
@@ -23,8 +23,8 @@ class InstagramDownloader(BaseDownloader):
     
     def _download_image_via_ytdlp_info(self, url: str, output_dir: str) -> Optional[Dict[str, Any]]:
         """Извлекает URL изображения через yt-dlp extract_info и скачивает напрямую"""
+        cookies_copy = None
         try:
-            cookies_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'cookies.txt')
             opts = {
                 'quiet': True,
                 'no_warnings': True,
@@ -33,9 +33,10 @@ class InstagramDownloader(BaseDownloader):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
             }
-            if os.path.exists(cookies_path):
-                opts['cookiefile'] = cookies_path
-            
+            cookies_copy = get_readonly_cookies_path()
+            if cookies_copy:
+                opts['cookiefile'] = cookies_copy
+
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             
@@ -76,8 +77,12 @@ class InstagramDownloader(BaseDownloader):
         except Exception as e:
             logger.warning(f"Instagram extract_info fallback failed: {e}")
             return None
-    
+        finally:
+            if cookies_copy and os.path.exists(cookies_copy):
+                os.remove(cookies_copy)
+
     async def download(self, url: str, output_dir: str, progress_hook: Callable = None) -> Optional[Dict[str, Any]]:
+        cookies_copy = None
         try:
             output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
             opts = {
@@ -91,11 +96,11 @@ class InstagramDownloader(BaseDownloader):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
             }
-            
-            cookies_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'cookies.txt')
-            if os.path.exists(cookies_path):
-                opts['cookiefile'] = cookies_path
-            
+
+            cookies_copy = get_readonly_cookies_path()
+            if cookies_copy:
+                opts['cookiefile'] = cookies_copy
+
             if progress_hook:
                 opts['progress_hooks'] = [progress_hook]
             
@@ -135,3 +140,6 @@ class InstagramDownloader(BaseDownloader):
             # Фоллбек на gallery-dl
             logger.info("Instagram: пробуем gallery-dl для фото...")
             return download_images_via_gallery_dl(url, output_dir)
+        finally:
+            if cookies_copy and os.path.exists(cookies_copy):
+                os.remove(cookies_copy)

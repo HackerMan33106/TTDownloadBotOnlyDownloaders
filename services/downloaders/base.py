@@ -2,6 +2,7 @@
 Базовый класс для загрузчиков видео
 """
 import os
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -15,12 +16,36 @@ from config.settings import MAX_UPLOAD_SIZE_MB, COOKIES_PATH, TEMP_DIR, logger
 # Максимальный размер файла для yt-dlp (2x от upload limit для запаса на сплиттинг)
 MAX_DOWNLOAD_SIZE = int(MAX_UPLOAD_SIZE_MB * 2 * 1024 * 1024)
 
+# Разрешаем yt-dlp скачать решатель JS-challenge (нужен для YouTube с Deno-runtime)
+YTDLP_REMOTE_COMPONENTS = ['ejs:github']
+
+
+def get_readonly_cookies_path() -> Optional[str]:
+    """
+    Возвращает путь к одноразовой копии cookies.txt.
+
+    yt-dlp/gallery-dl перезаписывают файл cookies при каждом запуске
+    (сохраняют обновлённый cookie jar), из-за чего исходные куки авторизации
+    со временем затираются гостевыми Set-Cookie от сервера.
+    Поэтому передаём им копию, а не оригинал.
+    """
+    if not os.path.exists(COOKIES_PATH):
+        return None
+    tmp_path = TEMP_DIR / f"cookies_{os.urandom(4).hex()}.txt"
+    try:
+        shutil.copyfile(COOKIES_PATH, tmp_path)
+        return str(tmp_path)
+    except OSError as e:
+        logger.warning(f"⚠️ Не удалось скопировать cookies.txt: {e}")
+        return None
+
 
 def download_images_via_gallery_dl(url: str, output_dir: str) -> Optional[Dict[str, Any]]:
     """
     Скачивает изображения через gallery-dl (фоллбек для фото-постов).
     Возвращает dict с file_path (или list путей) или None.
     """
+    cookies_copy = get_readonly_cookies_path()
     try:
         command = [
             "gallery-dl",
@@ -28,8 +53,8 @@ def download_images_via_gallery_dl(url: str, output_dir: str) -> Optional[Dict[s
             "--filename", "{num:>02}.{extension}",
             "--range", "1-20",
         ]
-        if os.path.exists(COOKIES_PATH):
-            command.extend(["--cookies", COOKIES_PATH])
+        if cookies_copy:
+            command.extend(["--cookies", cookies_copy])
         command.append(url)
 
         logger.info(f"📷 gallery-dl fallback: {url}")
@@ -74,6 +99,9 @@ def download_images_via_gallery_dl(url: str, output_dir: str) -> Optional[Dict[s
     except Exception as e:
         logger.error(f"❌ gallery-dl error: {e}")
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 def is_no_media_error(error_msg: str) -> bool:

@@ -6,8 +6,8 @@ from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 import yt_dlp
 
-from .base import BaseDownloader, MAX_DOWNLOAD_SIZE
-from config.settings import logger, COOKIES_PATH
+from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, get_readonly_cookies_path
+from config.settings import logger
 
 
 class PornHubDownloader(BaseDownloader):
@@ -25,6 +25,7 @@ class PornHubDownloader(BaseDownloader):
         return ['pornhub.com']
     
     async def download(self, url: str, output_dir: str, progress_hook: Callable = None) -> Optional[Dict[str, Any]]:
+        cookies_copy = None
         try:
             output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
             opts = {
@@ -45,12 +46,9 @@ class PornHubDownloader(BaseDownloader):
             }
 
             # Добавляем cookies если файл существует
-            if os.path.exists(COOKIES_PATH):
-                cookies_size = os.path.getsize(COOKIES_PATH)
-                logger.info(f"🍪 PornHub: Используем cookies из {COOKIES_PATH} ({cookies_size} байт)")
-                opts['cookiefile'] = str(COOKIES_PATH)
-            else:
-                logger.warning(f"⚠️ PornHub: Cookies не найдены: {COOKIES_PATH}")
+            cookies_copy = get_readonly_cookies_path()
+            if cookies_copy:
+                opts['cookiefile'] = cookies_copy
 
             if progress_hook:
                 opts['progress_hooks'] = [progress_hook]
@@ -79,3 +77,6 @@ class PornHubDownloader(BaseDownloader):
         except Exception as e:
             logger.error(f"PornHub download error: {e}")
             return None
+        finally:
+            if cookies_copy and os.path.exists(cookies_copy):
+                os.remove(cookies_copy)

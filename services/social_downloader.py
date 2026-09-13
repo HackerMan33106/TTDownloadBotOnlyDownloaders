@@ -10,11 +10,11 @@ import yt_dlp
 
 from config.settings import (
     TEMP_DIR,
-    COOKIES_PATH,
     MAX_DOWNLOAD_RETRIES,
     MAX_UPLOAD_SIZE_MB,
     logger
 )
+from services.downloaders.base import get_readonly_cookies_path
 from utils.social import get_platform_name, get_platform_display_name
 
 
@@ -30,6 +30,7 @@ def _is_no_media_error(error_msg: str) -> bool:
 
 def download_social_images_sync(url: str, attempt: int = 1) -> list | None:
     """Скачивает изображения через gallery-dl (синхронная)"""
+    cookies_copy = None
     try:
         download_id = os.urandom(4).hex()
         output_dir = TEMP_DIR / f"social_{download_id}"
@@ -42,8 +43,9 @@ def download_social_images_sync(url: str, attempt: int = 1) -> list | None:
             "--range", "1-20",  # Лимит фото
         ]
 
-        if os.path.exists(COOKIES_PATH):
-            command.extend(["--cookies", COOKIES_PATH])
+        cookies_copy = get_readonly_cookies_path()
+        if cookies_copy:
+            command.extend(["--cookies", cookies_copy])
 
         command.append(url)
 
@@ -84,10 +86,14 @@ def download_social_images_sync(url: str, attempt: int = 1) -> list | None:
         if attempt < MAX_DOWNLOAD_RETRIES:
             return download_social_images_sync(url, attempt + 1)
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 def download_social_video_sync(url: str, attempt: int = 1) -> str | None:
     """Скачивает видео через yt-dlp (синхронная)"""
+    cookies_copy = None
     try:
         video_id = os.urandom(4).hex()
         output_path = TEMP_DIR / f"social_{video_id}"
@@ -104,8 +110,9 @@ def download_social_video_sync(url: str, attempt: int = 1) -> str | None:
             },
         }
 
-        if os.path.exists(COOKIES_PATH):
-            ydl_opts['cookiefile'] = COOKIES_PATH
+        cookies_copy = get_readonly_cookies_path()
+        if cookies_copy:
+            ydl_opts['cookiefile'] = cookies_copy
 
         platform = get_platform_name(url) or "unknown"
         logger.info(f"🎬 Запуск yt-dlp для {platform}: {url} (попытка {attempt}/{MAX_DOWNLOAD_RETRIES})")
@@ -144,6 +151,9 @@ def download_social_video_sync(url: str, attempt: int = 1) -> str | None:
             time.sleep(3)
             return download_social_video_sync(url, attempt + 1)
         return None
+    finally:
+        if cookies_copy and os.path.exists(cookies_copy):
+            os.remove(cookies_copy)
 
 
 async def download_social_content(url: str) -> tuple:

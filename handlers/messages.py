@@ -16,7 +16,7 @@ from config.settings import (
 )
 from database.admins import is_admin, get_all_admins
 from database.users import ruser
-from database.limits import get_user_limit, check_and_increment_usage, decrement_usage
+from database.limits import get_user_limit, check_and_increment_usage, decrement_usage, is_blacklisted
 from database.audio import audio_url_storage, save_audio_url_storage
 from database.whitelist import is_user_whitelisted, is_group_whitelisted
 from services.downloader import download_tiktok_content
@@ -84,6 +84,20 @@ async def handle_message(message: types.Message, bot: Bot):
             logger.info(f"🚫 Доступ запрещен для пользователя {user_link} | Отправил: {urls}")
             return
 
+    # Проверяем, не заблокирован ли пользователь
+    if await is_blacklisted(user_id):
+        from utils.helpers import create_delete_button
+        await message.reply(
+            "🚫 Использование бота для вас заблокировано.",
+            reply_markup=create_delete_button(message)
+        )
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        logger.info(f"🚫 Заблокированный пользователь {user_link} попытался использовать бота")
+        return
+
     # Проверяем что ссылки найдены
     if not urls:
         await message.reply("❌ Не удалось распознать ссылки")
@@ -117,7 +131,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
     """Обрабатывает одну TikTok ссылку"""
     # Очищаем URL для отображения в caption
     clean_url = clean_tiktok_url(url)
-    
+
     if not clean_url:
         _err_ctx = "неподдерживаемый или нераспознанный формат ссылки TikTok"
         # Error logged
@@ -126,16 +140,31 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         ])
         await msg.edit_text("❌ Произошла ошибка при обработке запроса", reply_markup=keyboard)
         return
-    
+
+    user_id = original_message.from_user.id
+
+    # Проверяем, не заблокирован ли пользователь
+    if await is_blacklisted(user_id):
+        from utils.helpers import create_delete_button
+        await msg.edit_text(
+            "🚫 Использование бота для вас заблокировано.",
+            reply_markup=create_delete_button(original_message)
+        )
+        try:
+            await original_message.delete()
+        except Exception:
+            pass
+        logger.info(f"🚫 Заблокированный пользователь {user_id} попытался использовать бота")
+        return
+
     # Получаем username текущего пользователя для caption
     username_display = f"@{original_message.from_user.username}" if original_message.from_user.username else original_message.from_user.first_name
-    user_id = original_message.from_user.id
     
     # Проверяем лимит пользователя и формируем caption
     limit_data = await get_user_limit(user_id)
     if limit_data and user_id not in PERMANENT_ADMIN and user_id not in await get_all_admins():
         max_uses, current_uses, _ = limit_data
-        remaining = max_uses - current_uses
+        remaining = max(0, max_uses - current_uses)
         
         # Склонение для "использование"
         if remaining % 10 == 1 and remaining % 100 != 11:
@@ -1165,7 +1194,8 @@ async def handle_social_message(message: types.Message, bot: Bot):
             max_uses = limit_data[0]
 
             if max_uses == 0:
-                await message.reply("🚫 Использование бота для вас заблокировано.")
+                from utils.helpers import create_delete_button
+                await message.reply("🚫 Использование бота для вас заблокировано.", reply_markup=create_delete_button(message))
                 try:
                     await message.delete()
                 except:

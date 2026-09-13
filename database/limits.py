@@ -76,6 +76,11 @@ async def check_and_increment_usage(user_id: int) -> bool:
         return True  # Нет ограничений
 
     max_uses, current_uses, last_reset = limit_data
+
+    # Если пользователь заблокирован (max_uses == 0) — доступ запрещён всегда
+    if max_uses == 0:
+        return False
+
     utc_plus_1 = timezone(timedelta(hours=1))
     current_time = datetime.now(utc_plus_1)
     last_reset_time = datetime.fromisoformat(last_reset)
@@ -135,6 +140,11 @@ async def is_blacklisted(user_id: int) -> bool:
     Проверяет, находится ли пользователь в blacklist
     Blacklist = max_uses = 0
     """
+    if user_id in PERMANENT_ADMIN:
+        return False
+    if user_id in await get_all_admins():
+        return False
+
     limit_data = await get_user_limit(user_id)
     if not limit_data:
         return False

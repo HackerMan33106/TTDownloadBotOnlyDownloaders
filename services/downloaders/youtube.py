@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 import yt_dlp
 
-from .base import BaseDownloader, MAX_DOWNLOAD_SIZE
+from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, get_readonly_cookies_path, YTDLP_REMOTE_COMPONENTS
 from config.settings import logger
 
 
@@ -21,9 +21,10 @@ class YouTubeDownloader(BaseDownloader):
         return ['youtube.com', 'youtu.be', 'music.youtube.com']
     
     async def download(self, url: str, output_dir: str, progress_hook: Callable = None) -> Optional[Dict[str, Any]]:
+        cookies_copy = None
         try:
             output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
-            
+
             opts = {
                 'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
                 'merge_output_format': 'mp4',
@@ -32,18 +33,22 @@ class YouTubeDownloader(BaseDownloader):
                 'max_filesize': MAX_DOWNLOAD_SIZE,
                 'quiet': True,
                 'no_warnings': True,
+                'remote_components': YTDLP_REMOTE_COMPONENTS,
             }
+            cookies_copy = get_readonly_cookies_path()
+            if cookies_copy:
+                opts['cookiefile'] = cookies_copy
             if progress_hook:
                 opts['progress_hooks'] = [progress_hook]
-            
+
             logger.info(f"YouTube: Загрузка {url}")
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
-            
+
             files = list(Path(output_dir).glob('*.mp4'))
             if not files:
                 return None
-            
+
             file_path = str(files[0])
             return {
                 'file_path': file_path,
@@ -54,3 +59,6 @@ class YouTubeDownloader(BaseDownloader):
         except Exception as e:
             logger.error(f"YouTube download error: {e}")
             return None
+        finally:
+            if cookies_copy and os.path.exists(cookies_copy):
+                os.remove(cookies_copy)

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Информационные команды (/help, /ping)
 """
 import time
@@ -44,8 +44,8 @@ async def help_command(message: types.Message):
             
             "🚫 Черный список:\n"
             "• /bl - показать черный список\n"
-            "• /bl -a ID|@username количество - установить лимиты\n"
-            "• /bl -r ID|@username - удалить из blacklist\n"
+            "• /bl -a ID|@username [лимит] - установить лимит или заблокировать (без числа / 0)\n"
+            "• /bl -r ID|@username - разблокировать пользователя\n"
             "• /bl help - подробная справка\n\n"
         )
         
