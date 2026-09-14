@@ -70,7 +70,7 @@ else:
 # Режим отладки (переключается через /debug)
 DEBUG_MODE = False
 
-USE_LOCAL_API = os.getenv('USE_LOCAL_API', 'false').lower() == 'false'
+USE_LOCAL_API = os.getenv('USE_LOCAL_API', 'false').lower() in ('true', '1', 'yes')
 
 # Автоопределение LOCAL_API_URL в зависимости от платформы
 import platform
