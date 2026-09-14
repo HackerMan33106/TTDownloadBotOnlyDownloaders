@@ -36,32 +36,22 @@ jobs:
             echo ">>> 📥 Updating code..."
             cd ~/app || exit 1
 
-            # Останавливаем контейнеры и сохраняем data/
+            # Обновляем репозиторий без удаления папки и без sudo
             if [ -d "TTDownloadBotOnlyDownloders" ]; then
-              echo ">>> 🛑 Stopping containers..."
               cd TTDownloadBotOnlyDownloders
+              echo ">>> 🛑 Stopping containers..."
               docker compose down || true
-              cd ~/app
-
-              echo ">>> 💾 Backing up data directory..."
-              if [ -d "TTDownloadBotOnlyDownloders/data" ]; then
-                mv TTDownloadBotOnlyDownloders/data ~/app/data_backup
-              fi
-
-              echo ">>> 🗑️ Removing old directory..."
-              sudo rm -rf TTDownloadBotOnlyDownloders
-            fi
-
-            echo ">>> 🔄 Cloning repository..."
-            git clone git@github.com:HackerMan33106/TTDownloadBotOnlyDownloaders.git TTDownloadBotOnlyDownloders
-            cd TTDownloadBotOnlyDownloders || exit 1
-
-            echo ">>> 📦 Restoring data directory..."
-            if [ -d ~/app/data_backup ]; then
-              mv ~/app/data_backup ./data
+              echo ">>> 🔄 Fetching latest code..."
+              git remote set-url origin https://github.com/HackerMan33106/TTDownloadBotOnlyDownloaders.git
+              git fetch origin main
+              git reset --hard origin/main
             else
-              mkdir -p ./data
+              echo ">>> 🔄 Cloning repository..."
+              git clone https://github.com/HackerMan33106/TTDownloadBotOnlyDownloaders.git TTDownloadBotOnlyDownloders
+              cd TTDownloadBotOnlyDownloders || exit 1
             fi
+
+            mkdir -p ./data
 
             echo ">>> 📝 Creating .env file..."
             cat > .env << EOF
