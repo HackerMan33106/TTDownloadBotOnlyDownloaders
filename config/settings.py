@@ -67,8 +67,55 @@ else:
     logger.warning("⚠️ TRASH_GROUP_ID не установлен - кэширование медиафайлов отключено")
     TRASH_GROUP_ID = None
 
-# Режим отладки (переключается через /debug)
-DEBUG_MODE = False
+# Режим отладки (динамически считывается из .env в реальном времени)
+_env_last_mtime = 0.0
+_env_cached_debug_mode = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes')
+DEBUG_MODE = _env_cached_debug_mode
+
+
+def _find_env_path() -> str | None:
+    """Ищет путь к файлу .env в корневой папке проекта или контейнера"""
+    candidates = [
+        Path('/app/.env'),
+        Path(__file__).resolve().parent.parent / '.env',
+        Path.cwd() / '.env',
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def is_debug_mode() -> bool:
+    """
+    Проверяет режим отладки напрямую из файла .env.
+    Если файл .env был изменён (например, через nano .env),
+    новое значение подхватывается сразу без перезапуска контейнера/бота.
+    """
+    global _env_last_mtime, _env_cached_debug_mode, DEBUG_MODE
+    env_file = _find_env_path()
+    if not env_file:
+        return DEBUG_MODE
+
+    try:
+        mtime = os.path.getmtime(env_file)
+        if mtime != _env_last_mtime:
+            _env_last_mtime = mtime
+            with open(env_file, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    key, val = line.split('=', 1)
+                    if key.strip() == 'DEBUG_MODE':
+                        val_clean = val.strip().strip('"').strip("'").lower()
+                        _env_cached_debug_mode = val_clean in ('true', '1', 'yes')
+                        DEBUG_MODE = _env_cached_debug_mode
+                        break
+    except Exception:
+        pass
+
+    return _env_cached_debug_mode
 
 USE_LOCAL_API = os.getenv('USE_LOCAL_API', 'false').lower() in ('true', '1', 'yes')
 

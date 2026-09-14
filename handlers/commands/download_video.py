@@ -25,7 +25,7 @@ from services.downloaders.soundcloud import SoundCloudDownloader
 from services.downloaders.dzen import DzenDownloader
 from services.downloaders.instagram import InstagramDownloader
 from services.downloaders.pornhub import PornHubDownloader
-from config.settings import DEBUG_MODE, logger, MAX_UPLOAD_SIZE_MB
+from config.settings import DEBUG_MODE, is_debug_mode, logger, MAX_UPLOAD_SIZE_MB
 from utils.helpers import create_delete_button, create_media_caption
 from utils.crypto import secure_callback
 
@@ -541,7 +541,8 @@ async def background_trash_cache_video_and_audio(
                         reply_markup=cache_keyboard
                     )
                     audio_file_id = a_msg.audio.file_id
-                    logger.info(f"📤 [Фон] Музыка отправлена в мусорную группу для {clean_url}")
+                    if is_debug_mode():
+                        logger.info(f"📤 [Фон] Музыка отправлена в мусорную группу для {clean_url}")
                     await set_media_cache(clean_url, None, audio_file_id)
                 except Exception as e:
                     logger.error(f"❌ [Фон] Ошибка отправки музыки в мусорную группу: {e}")
@@ -560,7 +561,8 @@ async def background_trash_cache_video_and_audio(
                     reply_markup=cache_keyboard
                 )
                 video_file_id = v_msg.video.file_id
-                logger.info(f"📤 [Фон] Видео отправлено в мусорную группу для {clean_url}")
+                if is_debug_mode():
+                    logger.info(f"📤 [Фон] Видео отправлено в мусорную группу для {clean_url}")
             except Exception as e:
                 logger.error(f"❌ [Фон] Ошибка отправки видео в мусорную группу: {e}")
 
@@ -578,14 +580,16 @@ async def background_trash_cache_video_and_audio(
                     reply_markup=cache_keyboard
                 )
                 audio_file_id = a_msg.audio.file_id
-                logger.info(f"📤 [Фон] Аудио отправлено в мусорную группу с кнопкой удаления для {clean_url}")
+                if is_debug_mode():
+                    logger.info(f"📤 [Фон] Аудио отправлено в мусорную группу с кнопкой удаления для {clean_url}")
             except Exception as e:
                 logger.error(f"❌ [Фон] Ошибка отправки аудио в мусорную группу: {e}")
 
         # 3. Обновляем кэш
         if video_file_id or audio_file_id:
             await set_media_cache(clean_url, video_file_id, audio_file_id)
-            logger.info(f"💾 [Фон] Кэш обновлён: video_id={video_file_id is not None}, audio_id={audio_file_id is not None}")
+            if is_debug_mode():
+                logger.info(f"💾 [Фон] Кэш обновлён: video_id={video_file_id is not None}, audio_id={audio_file_id is not None}")
 
     except Exception as e:
         logger.error(f"❌ [Фон] Ошибка фоновой задачи кэширования: {e}")
@@ -700,7 +704,8 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
 
     is_first, download_event = await acquire_download_lock(clean)
     if not is_first:
-        logger.info(f"⏳ [Deduplication] Ожидание параллельной загрузки для {clean}")
+        if is_debug_mode():
+            logger.info(f"⏳ [Deduplication] Ожидание параллельной загрузки для {clean}")
         wait_text = (
             f"⏳ Файл уже обрабатывается другим запросом, ожидаем...\n\n"
             f"Платформа: {downloader.name}\n"
@@ -717,7 +722,8 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
         try:
             await asyncio.wait_for(download_event.wait(), timeout=120)
         except asyncio.TimeoutError:
-            logger.warning(f"⚠️ [Deduplication] Таймаут ожидания загрузки для {clean}")
+            if is_debug_mode():
+                logger.warning(f"⚠️ [Deduplication] Таймаут ожидания загрузки для {clean}")
 
         # Повторно проверяем кэш после завершения первого запроса
         cached = await get_media_cache(clean)

@@ -47,6 +47,9 @@ async def help_command(message: types.Message):
             "• /bl -a ID|@username [лимит] - установить лимит или заблокировать (без числа / 0)\n"
             "• /bl -r ID|@username - разблокировать пользователя\n"
             "• /bl help - подробная справка\n\n"
+
+            "🛠️ Отладка:\n"
+            "• /debug - переключить подробные логи (DEBUG_MODE)\n\n"
         )
         
     await message.reply(help_text, parse_mode="HTML", reply_markup=create_delete_button(message))

@@ -1,4 +1,4 @@
-﻿from aiogram import Router, types, Bot, F
+from aiogram import Router, types, Bot, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command
 
@@ -434,3 +434,38 @@ async def admin_action_callback(callback: types.CallbackQuery, bot: Bot):
             )
         except:
             pass
+
+
+@router.message(Command('debug'))
+async def debug_command(message: types.Message, bot: Bot):
+    """Управление режимом отладки (DEBUG_MODE)"""
+    user_id = message.from_user.id
+    if user_id not in PERMANENT_ADMIN and not await is_admin(user_id):
+        return
+
+    from config.settings import is_debug_mode, set_debug_mode
+
+    args = message.text.split()
+    if len(args) > 1:
+        param = args[1].lower()
+        if param in ('on', '1', 'true', 'вкл'):
+            new_state = True
+        elif param in ('off', '0', 'false', 'выкл'):
+            new_state = False
+        else:
+            new_state = not is_debug_mode()
+    else:
+        new_state = not is_debug_mode()
+
+    set_debug_mode(new_state)
+
+    state_str = "ВКЛЮЧЕН ✅" if new_state else "ВЫКЛЮЧЕН ❌"
+    logger.info(f"🛠️ Режим отладки (DEBUG_MODE) изменен пользователем {user_id}: {state_str}")
+
+    await message.reply(
+        f"🛠️ <b>Режим отладки (DEBUG_MODE):</b> {state_str}\n\n"
+        f"• Включает подробные логи [Фон], [Deduplication], извлечение аудио и т.д.\n"
+        f"• Использование: <code>/debug on</code>, <code>/debug off</code> или просто <code>/debug</code>",
+        parse_mode="HTML",
+        reply_markup=create_delete_button(message)
+    )

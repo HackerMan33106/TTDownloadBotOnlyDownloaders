@@ -4,7 +4,7 @@
 """
 import asyncio
 from typing import Dict, Tuple
-from config.settings import logger
+from config.settings import logger, is_debug_mode
 
 # Активные события загрузки по нормализованному URL
 _active_downloads: Dict[str, asyncio.Event] = {}
@@ -22,12 +22,14 @@ async def acquire_download_lock(url: str) -> Tuple[bool, asyncio.Event]:
     """
     async with _lock:
         if url in _active_downloads:
-            logger.info(f"🔒 [Deduplication] URL уже загружается другим процессом: {url}")
+            if is_debug_mode():
+                logger.info(f"🔒 [Deduplication] URL уже загружается другим процессом: {url}")
             return False, _active_downloads[url]
         
         event = asyncio.Event()
         _active_downloads[url] = event
-        logger.info(f"🔑 [Deduplication] Захвачена блокировка загрузки для URL: {url}")
+        if is_debug_mode():
+            logger.info(f"🔑 [Deduplication] Захвачена блокировка загрузки для URL: {url}")
         return True, event
 
 
@@ -40,7 +42,8 @@ async def release_download_lock(url: str) -> None:
         event = _active_downloads.pop(url, None)
         if event:
             event.set()
-            logger.info(f"🔓 [Deduplication] Освобождена блокировка и оповещены ожидающие для URL: {url}")
+            if is_debug_mode():
+                logger.info(f"🔓 [Deduplication] Освобождена блокировка и оповещены ожидающие для URL: {url}")
 
 
 def is_url_downloading(url: str) -> bool:

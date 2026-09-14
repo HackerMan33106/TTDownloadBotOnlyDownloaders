@@ -10,6 +10,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMedia
 
 from config.settings import (
     DEBUG_MODE,
+    is_debug_mode,
     PERMANENT_ADMIN,
     logger,
     MAX_UPLOAD_SIZE_MB
@@ -376,7 +377,8 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
 
         is_first, download_event = await acquire_download_lock(clean_url)
         if not is_first:
-            logger.info(f"⏳ [TikTok Deduplication] Ожидание параллельной загрузки для {clean_url}")
+            if is_debug_mode():
+                logger.info(f"⏳ [TikTok Deduplication] Ожидание параллельной загрузки для {clean_url}")
             try:
                 await msg.edit_text("⏳ Этот контент уже обрабатывается другим запросом, ожидаем...")
             except Exception:
@@ -385,7 +387,8 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
             try:
                 await asyncio.wait_for(download_event.wait(), timeout=120)
             except asyncio.TimeoutError:
-                logger.warning(f"⚠️ [TikTok Deduplication] Таймаут ожидания TikTok для {clean_url}")
+                if is_debug_mode():
+                    logger.warning(f"⚠️ [TikTok Deduplication] Таймаут ожидания TikTok для {clean_url}")
 
             # После ожидания проверяем кэш
             cached = await get_media_cache(clean_url)
