@@ -3,6 +3,15 @@ name: Deploy Telegram Bot to VPS
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.dockerignore'
+      - 'LICENSE'
+      - '.env.example'
+      - '.claude/**'
+      - '.claudeignore'
 
 jobs:
   deploy:
