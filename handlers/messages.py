@@ -161,12 +161,61 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
     # Получаем username текущего пользователя для caption
     username_display = f"@{original_message.from_user.username}" if original_message.from_user.username else original_message.from_user.first_name
     
-    # Проверяем лимит пользователя и формируем caption
-    limit_data = await get_user_limit(user_id)
-    if limit_data and user_id not in PERMANENT_ADMIN and user_id not in await get_all_admins():
+    # Проверяем лимиты пользователя и списываем попытку
+    needs_limit_check = not only_audio and (user_id not in PERMANENT_ADMIN and user_id not in await get_all_admins())
+    if needs_limit_check:
+        if not await check_and_increment_usage(user_id):
+            limit_data = await get_user_limit(user_id)
+            if limit_data:
+                max_uses = limit_data[0]
+
+                if max_uses == 0:
+                    from utils.helpers import create_delete_button
+                    await msg.edit_text(
+                        "🚫 Использование бота для вас заблокировано.",
+                        reply_markup=create_delete_button(original_message)
+                    )
+                    try:
+                        await original_message.delete()
+                    except Exception:
+                        pass
+                    logger.info(f"🚫 Заблокированный пользователь {user_id} попытался использовать бота")
+                    return
+
+                from datetime import datetime, timezone, timedelta
+                utc_plus_1 = timezone(timedelta(hours=1))
+                current_time = datetime.now(utc_plus_1)
+                midnight = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                time_diff = midnight - current_time
+
+                hours = time_diff.seconds // 3600
+                minutes = (time_diff.seconds % 3600) // 60
+
+                reset_time_str = midnight.strftime("%H:%M")
+                countdown = f"{hours}ч {minutes}м"
+
+                from utils.helpers import create_delete_button
+                await msg.edit_text(
+                    f"❌ Вы превысили дневной лимит использований ({max_uses} раз)\n"
+                    f"⏰ Сброс в {reset_time_str} UTC+1 (через {countdown})",
+                    reply_markup=create_delete_button(original_message)
+                )
+
+                try:
+                    await original_message.delete()
+                except Exception:
+                    pass
+
+                logger.info(f"🚫 Лимит превышен для пользователя {user_id}")
+            return
+
+    # Получаем актуальные данные о лимите после списания и формируем caption
+    limit_data = await get_user_limit(user_id) if needs_limit_check else None
+    if limit_data:
         max_uses, current_uses, _ = limit_data
+        logger.info(f"📊 Пользователь {user_id}: использовано {current_uses}/{max_uses}")
         remaining = max(0, max_uses - current_uses)
-        
+
         # Склонение для "использование"
         if remaining % 10 == 1 and remaining % 100 != 11:
             use_word = "использование"
@@ -174,7 +223,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
             use_word = "использования"
         else:
             use_word = "использований"
-        
+
         caption_text = f"{username_display}, у вас осталось {remaining}/{max_uses} {use_word} бота на этот день\n{clean_url}"
     else:
         # Для пользователей без ограничений
@@ -410,64 +459,9 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
                     "❌ Произошла ошибка при обработке запроса",
                     reply_markup=create_delete_button(original_message)
                 )
+                if needs_limit_check:
+                    await decrement_usage(user_id)
                 return
-
-        # Мы первый запрос: проверяем лимиты пользователя
-        needs_limit_check = False
-        if not only_audio:
-            needs_limit_check = True
-
-        if needs_limit_check:
-            if not await check_and_increment_usage(user_id):
-                limit_data = await get_user_limit(user_id)
-                if limit_data:
-                    max_uses = limit_data[0]
-
-                    if max_uses == 0:
-                        from utils.helpers import create_delete_button
-                        await msg.edit_text(
-                            "🚫 Использование бота для вас заблокировано.",
-                            reply_markup=create_delete_button(original_message)
-                        )
-                        try:
-                            await original_message.delete()
-                        except:
-                            pass
-                        logger.info(f"🚫 Заблокированный пользователь {user_id} попытался использовать бота")
-                        return
-
-                    from datetime import datetime, timezone, timedelta
-                    utc_plus_1 = timezone(timedelta(hours=1))
-                    current_time = datetime.now(utc_plus_1)
-                    midnight = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                    time_diff = midnight - current_time
-
-                    hours = time_diff.seconds // 3600
-                    minutes = (time_diff.seconds % 3600) // 60
-
-                    reset_time_str = midnight.strftime("%H:%M")
-                    countdown = f"{hours}ч {minutes}м"
-
-                    from utils.helpers import create_delete_button
-                    await msg.edit_text(
-                        f"❌ Вы превысили дневной лимит использований ({max_uses} раз)\n"
-                        f"⏰ Сброс в {reset_time_str} UTC+1 (через {countdown})",
-                        reply_markup=create_delete_button(original_message)
-                    )
-
-                    try:
-                        await original_message.delete()
-                    except:
-                        pass
-
-                    logger.info(f"🚫 Лимит превышен для пользователя {user_id}")
-                return
-
-        # Логируем оставшиеся использования для пользователей с лимитом
-        limit_data = await get_user_limit(user_id)
-        if limit_data and needs_limit_check:
-            max_uses, current_uses, _ = limit_data
-            logger.info(f"📊 Пользователь {user_id}: использовано {current_uses}/{max_uses}")
         
         # Показываем статус для слайдшоу (они скачиваются дольше)
         if is_slideshow:
@@ -534,6 +528,9 @@ async def _process_slideshow(original_message, content_path, caption_text, clean
     """Обработка слайдшоу"""
     if len(content_path) > 100:
         await msg.edit_text("❌ Слишком много фотографий (макс. 100)")
+        limit_data = await get_user_limit(user_id)
+        if limit_data:
+            await decrement_usage(user_id)
         return
 
     total_size = 0
@@ -985,6 +982,9 @@ async def _process_video(original_message, content_path, caption_text, clean_url
 
     if size_mb > MAX_UPLOAD_SIZE_MB and not await is_admin(user_id):
         await msg.edit_text(f"❌ Видео больше {MAX_UPLOAD_SIZE_MB}MB")
+        limit_data = await get_user_limit(user_id)
+        if limit_data:
+            await decrement_usage(user_id)
         return
 
     from config.settings import TRASH_GROUP_ID
