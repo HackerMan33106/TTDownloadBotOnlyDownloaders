@@ -108,6 +108,7 @@ def is_retryable_error(error_msg: str) -> bool:
         # Прочие сетевые ошибки
         'Network is unreachable', 'Host is unreachable',
         'No route to host', 'Connection aborted',
+        'Could not resolve host', 'resolve host', 'name resolution', 'TransportError',
         # Коды ошибок
         '503', '429', '500', '502', '504', '408'
     ]

@@ -187,16 +187,232 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         cached = await get_media_cache(clean_url)
         is_slideshow = is_tiktok_slideshow(clean_url)
 
-        # Проверяем лимит ТОЛЬКО если контент не в кэше или это не аудио
-        # Аудио не учитывается в лимитах
+        async def _try_send_cached(cached_media):
+            if only_audio:
+                if cached_media and cached_media[1]:
+                    # Создаем кнопку удаления для аудио
+                    audio_id = f"audio_only_{user_id}_{int(time.time())}"
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
+                    ])
+
+                    sent_audio = await bot.send_audio(
+                        original_message.chat.id,
+                        cached_media[1],
+                        caption=caption_text,
+                        title="Аудио",
+                        reply_markup=keyboard
+                    )
+
+                    # Сохраняем информацию об аудио для возможности удаления
+                    from database.audio import audio_downloaded, save_audio_downloaded
+                    audio_data = {
+                        "message_id": sent_audio.message_id,
+                        "chat_id": original_message.chat.id,
+                        "file_id": cached_media[1]
+                    }
+                    audio_downloaded[audio_id] = audio_data
+                    await save_audio_downloaded(audio_id, audio_data)
+
+                    await msg.delete()
+                    return True
+                elif is_slideshow:
+                    # Для слайдшоу с флагом -a отправляем только аудио
+                    from database.db import get_slideshow_cache
+                    cached_slideshow = await get_slideshow_cache(clean_url)
+                    if cached_slideshow and cached_slideshow[1]:
+                        # Есть закэшированное аудио
+                        audio_id = f"audio_only_{user_id}_{int(time.time())}"
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
+                        ])
+
+                        sent_audio = await bot.send_audio(
+                            original_message.chat.id,
+                            cached_slideshow[1],
+                            caption=caption_text,
+                            title="Аудио",
+                            reply_markup=keyboard
+                        )
+
+                        # Сохраняем информацию об аудио для возможности удаления
+                        from database.audio import audio_downloaded, save_audio_downloaded
+                        audio_data = {
+                            "message_id": sent_audio.message_id,
+                            "chat_id": original_message.chat.id,
+                            "file_id": cached_slideshow[1]
+                        }
+                        audio_downloaded[audio_id] = audio_data
+                        await save_audio_downloaded(audio_id, audio_data)
+
+                        await msg.delete()
+                        return True
+            else:
+                # Проверяем кэш для слайдшоу
+                if is_slideshow:
+                    from database.db import get_slideshow_cache
+                    cached_slideshow = await get_slideshow_cache(clean_url)
+
+                    if cached_slideshow and cached_slideshow[0]:
+                        # Слайдшоу найдено в кэше, отправляем из кэша
+                        cached_photo_ids, cached_audio_id = cached_slideshow
+                        logger.info(f"✅ Слайдшоу найдено в кэше ({len(cached_photo_ids)} фото)")
+
+                        await msg.edit_text("📤 Отправляю из кэша...")
+
+                        # Отправляем фото из кэша
+                        from aiogram.types import InputMediaPhoto
+                        MAX_PHOTOS_PER_GROUP = 10
+                        all_sent_messages = []
+
+                        for chunk_start in range(0, len(cached_photo_ids), MAX_PHOTOS_PER_GROUP):
+                            chunk_end = min(chunk_start + MAX_PHOTOS_PER_GROUP, len(cached_photo_ids))
+                            chunk_file_ids = cached_photo_ids[chunk_start:chunk_end]
+
+                            media_group = []
+                            for i, file_id in enumerate(chunk_file_ids):
+                                is_last_photo_overall = (chunk_end == len(cached_photo_ids)) and (i == len(chunk_file_ids) - 1)
+
+                                if is_last_photo_overall:
+                                    media_group.append(InputMediaPhoto(
+                                        media=file_id,
+                                        caption=caption_text
+                                    ))
+                                else:
+                                    media_group.append(InputMediaPhoto(media=file_id))
+
+                            messages = await bot.send_media_group(
+                                chat_id=original_message.chat.id,
+                                media=media_group
+                            )
+                            all_sent_messages.extend(messages)
+
+                            if chunk_end < len(cached_photo_ids):
+                                await asyncio.sleep(1)
+
+                        # Создаем кнопки
+                        message_ids = ",".join([str(m.message_id) for m in all_sent_messages])
+                        slideshow_id = f"slideshow_{user_id}_{int(time.time())}"
+
+                        buttons = []
+                        if cached_audio_id:
+                            audio_id = f"slideshow_audio_{user_id}_{int(time.time())}"
+                            audio_data = {
+                                "audio_file_id": cached_audio_id,
+                                "slideshow_url": clean_url,
+                                "control_message_chat_id": original_message.chat.id,
+                                "message_ids": message_ids,
+                                "last_media_group_message_id": all_sent_messages[-1].message_id,
+                                "slideshow_id": slideshow_id,
+                                "type": "slideshow_audio"
+                            }
+                            audio_url_storage[audio_id] = audio_data
+                            await save_audio_url_storage(audio_id, audio_data)
+                            buttons.append([InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"send_slideshow_audio:{audio_id}"))])
+                        else:
+                            slideshow_data = {
+                                "message_ids": message_ids,
+                                "type": "slideshow"
+                            }
+                            audio_url_storage[slideshow_id] = slideshow_data
+                            await save_audio_url_storage(slideshow_id, slideshow_data)
+
+                        buttons.append([InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_slideshow:{user_id}:{slideshow_id}"))])
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+                        control_message = await bot.send_message(
+                            chat_id=original_message.chat.id,
+                            text="Удалить изображения или отправить аудио?",
+                            reply_markup=keyboard
+                        )
+
+                        if cached_audio_id:
+                            audio_url_storage[audio_id]["control_message_id"] = control_message.message_id
+                            await save_audio_url_storage(audio_id, audio_url_storage[audio_id])
+
+                        await msg.delete()
+                        logger.info(f"✅ {user_link} - слайдшоу из кэша ({len(cached_photo_ids)} фото)")
+                        return True
+
+                # Проверяем кэш для видео
+                if cached_media and cached_media[0] and not is_slideshow:
+                    url_id = f"{user_id}_{int(time.time())}"
+                    url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:16]
+                    if cached_media[1]:
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"send_cached_audio:{url_hash}")],
+                            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
+                        ])
+                    else:
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="📥 Установленное аудио", callback_data=f"extract_audio:{url_id}")],
+                            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
+                        ])
+
+                    video_data = {
+                        "url": clean_url,
+                        "chat_id": original_message.chat.id,
+                        "owner_id": user_id  # Сохраняем ID владельца видео
+                    }
+                    audio_url_storage[url_id] = video_data
+                    await save_audio_url_storage(url_id, video_data)
+
+                    sent_video = await bot.send_video(original_message.chat.id, cached_media[0], caption=caption_text, reply_markup=keyboard)
+
+                    video_data["video_message_id"] = sent_video.message_id
+                    await save_audio_url_storage(url_id, video_data)
+
+                    await msg.delete()
+                    return True
+
+            return False
+
+        # Сначала проверяем, есть ли уже готовый кэш
+        if await _try_send_cached(cached):
+            return
+
+        # Контента нет в кэше — захватываем блокировку загрузки
+        from utils.download_lock import acquire_download_lock, release_download_lock
+
+        is_first, download_event = await acquire_download_lock(clean_url)
+        if not is_first:
+            logger.info(f"⏳ [TikTok Deduplication] Ожидание параллельной загрузки для {clean_url}")
+            try:
+                await msg.edit_text("⏳ Этот контент уже обрабатывается другим запросом, ожидаем...")
+            except Exception:
+                pass
+
+            try:
+                await asyncio.wait_for(download_event.wait(), timeout=120)
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ [TikTok Deduplication] Таймаут ожидания TikTok для {clean_url}")
+
+            # После ожидания проверяем кэш
+            cached = await get_media_cache(clean_url)
+            if only_audio and cached and not cached[1] and cached[0]:
+                for _ in range(15):
+                    await asyncio.sleep(1)
+                    cached = await get_media_cache(clean_url)
+                    if cached and cached[1]:
+                        break
+
+            if await _try_send_cached(cached):
+                return
+
+            # Если кэш так и не появился, пытаемся скачать сами
+            is_first, download_event = await acquire_download_lock(clean_url)
+            if not is_first:
+                from utils.helpers import create_delete_button
+                await msg.edit_text(
+                    "❌ Произошла ошибка при обработке запроса",
+                    reply_markup=create_delete_button(original_message)
+                )
+                return
+
+        # Мы первый запрос: проверяем лимиты пользователя
         needs_limit_check = False
-        if only_audio:
-            # Аудио всегда без лимита
-            needs_limit_check = False
-        else:
-            # Видео: проверяем лимит только если нет в кэше
-            if not (cached and cached[0] and not is_slideshow):
-                needs_limit_check = True
+        if not only_audio:
+            needs_limit_check = True
 
         if needs_limit_check:
             if not await check_and_increment_usage(user_id):
@@ -249,186 +465,6 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         if limit_data and needs_limit_check:
             max_uses, current_uses, _ = limit_data
             logger.info(f"📊 Пользователь {user_id}: использовано {current_uses}/{max_uses}")
-
-        if only_audio:
-            if cached and cached[1]:
-                # Создаем кнопку удаления для аудио
-                audio_id = f"audio_only_{user_id}_{int(time.time())}"
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
-                ])
-
-                sent_audio = await bot.send_audio(
-                    original_message.chat.id,
-                    cached[1],
-                    caption=caption_text,
-                    title="Аудио",
-                    reply_markup=keyboard
-                )
-
-                # Сохраняем информацию об аудио для возможности удаления
-                from database.audio import audio_downloaded, save_audio_downloaded
-                audio_data = {
-                    "message_id": sent_audio.message_id,
-                    "chat_id": original_message.chat.id,
-                    "file_id": cached[1]
-                }
-                audio_downloaded[audio_id] = audio_data
-                await save_audio_downloaded(audio_id, audio_data)
-
-                await msg.delete()
-                return
-            elif is_slideshow:
-                # Для слайдшоу с флагом -a отправляем только аудио
-                from database.db import get_slideshow_cache
-                cached_slideshow = await get_slideshow_cache(clean_url)
-                if cached_slideshow and cached_slideshow[1]:
-                    # Есть закэшированное аудио
-                    audio_id = f"audio_only_{user_id}_{int(time.time())}"
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{user_id}:{audio_id}"))]
-                    ])
-
-                    sent_audio = await bot.send_audio(
-                        original_message.chat.id,
-                        cached_slideshow[1],
-                        caption=caption_text,
-                    title="Аудио",
-                        reply_markup=keyboard
-                    )
-
-                    # Сохраняем информацию об аудио для возможности удаления
-                    from database.audio import audio_downloaded, save_audio_downloaded
-                    audio_data = {
-                        "message_id": sent_audio.message_id,
-                        "chat_id": original_message.chat.id,
-                        "file_id": cached_slideshow[1]
-                    }
-                    audio_downloaded[audio_id] = audio_data
-                    await save_audio_downloaded(audio_id, audio_data)
-
-                    await msg.delete()
-                    return
-                else:
-                    # Аудио не закэшировано, нужно скачать слайдшоу
-                    pass
-        else:
-            # Проверяем кэш для слайдшоу
-            if is_slideshow:
-                from database.db import get_slideshow_cache
-                cached_slideshow = await get_slideshow_cache(clean_url)
-
-                if cached_slideshow and cached_slideshow[0]:
-                    # Слайдшоу найдено в кэше, отправляем из кэша
-                    cached_photo_ids, cached_audio_id = cached_slideshow
-                    logger.info(f"✅ Слайдшоу найдено в кэше ({len(cached_photo_ids)} фото)")
-
-                    await msg.edit_text("📤 Отправляю из кэша...")
-
-                    # Отправляем фото из кэша
-                    from aiogram.types import InputMediaPhoto
-                    MAX_PHOTOS_PER_GROUP = 10
-                    all_sent_messages = []
-
-                    for chunk_start in range(0, len(cached_photo_ids), MAX_PHOTOS_PER_GROUP):
-                        chunk_end = min(chunk_start + MAX_PHOTOS_PER_GROUP, len(cached_photo_ids))
-                        chunk_file_ids = cached_photo_ids[chunk_start:chunk_end]
-
-                        media_group = []
-                        for i, file_id in enumerate(chunk_file_ids):
-                            is_last_photo_overall = (chunk_end == len(cached_photo_ids)) and (i == len(chunk_file_ids) - 1)
-
-                            if is_last_photo_overall:
-                                media_group.append(InputMediaPhoto(
-                                    media=file_id,
-                                    caption=caption_text
-                                ))
-                            else:
-                                media_group.append(InputMediaPhoto(media=file_id))
-
-                        messages = await bot.send_media_group(
-                            chat_id=original_message.chat.id,
-                            media=media_group
-                        )
-                        all_sent_messages.extend(messages)
-
-                        if chunk_end < len(cached_photo_ids):
-                            await asyncio.sleep(1)
-
-                    # Создаем кнопки
-                    message_ids = ",".join([str(m.message_id) for m in all_sent_messages])
-                    slideshow_id = f"slideshow_{user_id}_{int(time.time())}"
-
-                    buttons = []
-                    if cached_audio_id:
-                        audio_id = f"slideshow_audio_{user_id}_{int(time.time())}"
-                        audio_data = {
-                            "audio_file_id": cached_audio_id,
-                            "slideshow_url": clean_url,
-                            "control_message_chat_id": original_message.chat.id,
-                            "message_ids": message_ids,
-                            "last_media_group_message_id": all_sent_messages[-1].message_id,
-                            "slideshow_id": slideshow_id,
-                            "type": "slideshow_audio"
-                        }
-                        audio_url_storage[audio_id] = audio_data
-                        await save_audio_url_storage(audio_id, audio_data)
-                        buttons.append([InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=secure_callback(f"send_slideshow_audio:{audio_id}"))])
-                    else:
-                        slideshow_data = {
-                            "message_ids": message_ids,
-                            "type": "slideshow"
-                        }
-                        audio_url_storage[slideshow_id] = slideshow_data
-                        await save_audio_url_storage(slideshow_id, slideshow_data)
-
-                    buttons.append([InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_slideshow:{user_id}:{slideshow_id}"))])
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-                    control_message = await bot.send_message(
-                        chat_id=original_message.chat.id,
-                        text="Удалить изображения или отправить аудио?",
-                        reply_markup=keyboard
-                    )
-
-                    if cached_audio_id:
-                        audio_url_storage[audio_id]["control_message_id"] = control_message.message_id
-                        await save_audio_url_storage(audio_id, audio_url_storage[audio_id])
-
-                    await msg.delete()
-                    logger.info(f"✅ {user_link} - слайдшоу из кэша ({len(cached_photo_ids)} фото)")
-                    return
-
-            # Проверяем кэш для видео
-            if cached and cached[0] and not is_slideshow:
-                url_id = f"{user_id}_{int(time.time())}"
-                url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:16]
-                if cached[1]:
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🎵 Установленное аудио", callback_data=f"send_cached_audio:{url_hash}")],
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
-                    ])
-                else:
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📥 Установленное аудио", callback_data=f"extract_audio:{url_id}")],
-                        [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_video:{user_id}"))]
-                    ])
-
-                video_data = {
-                    "url": clean_url,
-                    "chat_id": original_message.chat.id,
-                    "owner_id": user_id  # Сохраняем ID владельца видео
-                }
-                audio_url_storage[url_id] = video_data
-                await save_audio_url_storage(url_id, video_data)
-
-                sent_video = await bot.send_video(original_message.chat.id, cached[0], caption=caption_text, reply_markup=keyboard)
-
-                video_data["video_message_id"] = sent_video.message_id
-                await save_audio_url_storage(url_id, video_data)
-
-                await msg.delete()
-                return
         
         # Показываем статус для слайдшоу (они скачиваются дольше)
         if is_slideshow:
@@ -486,6 +522,9 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
                 logger.info(f"⏪ Откат счётчика для пользователя {user_id} из-за ошибки обработки")
         except Exception:
             await original_message.reply("❌ Произошла ошибка при обработке запроса")
+    finally:
+        from utils.download_lock import release_download_lock
+        await release_download_lock(clean_url)
 
 
 async def _process_slideshow(original_message, content_path, caption_text, clean_url, user_id, user_link, msg, bot, only_audio=False):

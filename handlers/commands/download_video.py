@@ -590,6 +590,8 @@ async def background_trash_cache_video_and_audio(
     except Exception as e:
         logger.error(f"❌ [Фон] Ошибка фоновой задачи кэширования: {e}")
     finally:
+        from utils.download_lock import release_download_lock
+        await release_download_lock(clean_url)
         # 4. Удаляем временную папку
         if temp_dir and os.path.exists(temp_dir):
             try:
@@ -625,24 +627,20 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
     cached = await get_media_cache(clean)
     logger.info(f"🔍 Проверка кэша для '{clean}': {cached}")
 
-    if cached:
-        video_id, audio_id = cached
+    async def _send_cached_media(cached_data, target_msg):
+        video_id, audio_id = cached_data
         logger.info(f"📦 Кэш найден: video_id={video_id is not None}, audio_id={audio_id is not None}, only_audio={only_audio}")
         if only_audio:
             if audio_id:
-                # Создаем кнопку удаления для аудио из кэша
                 import time
                 audio_id_key = f"audio_only_{message.from_user.id}_{int(time.time())}"
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id_key}"))]
                 ])
 
-                # Создаем caption для аудио через атрибут -a (без названия видео)
                 caption = create_media_caption(message.from_user, url=clean, media_type="audio", title=None)
-
                 sent_audio = await message.bot.send_audio(message.chat.id, audio_id, caption=caption, reply_markup=keyboard, title="")
 
-                # Сохраняем информацию об аудио для возможности удаления
                 from database.audio import audio_downloaded, save_audio_downloaded
                 audio_data = {
                     "message_id": sent_audio.message_id,
@@ -652,16 +650,17 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                 audio_downloaded[audio_id_key] = audio_data
                 await save_audio_downloaded(audio_id_key, audio_data)
 
-                if status_msg:
-                    await status_msg.delete()
+                if target_msg:
+                    try:
+                        await target_msg.delete()
+                    except Exception:
+                        pass
                 return True
             else:
-                # Аудио нет в кэше, но видео есть - попробуем извлечь аудио из видео
                 logger.info(f"🎵 Аудио отсутствует в кэше, попытка извлечь из видео {video_id}")
-                # Продолжаем выполнение функции для извлечения аудио
+                return False
         else:
             if video_id:
-                # Используем очищенный URL для кэшированного видео
                 caption = create_media_caption(
                     message.from_user,
                     url=clean,
@@ -671,10 +670,17 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
 
                 kb = await get_video_keyboard(url, False, original_msg_id)
                 await message.bot.send_video(message.chat.id, video_id, caption=caption, reply_markup=kb)
-                if status_msg:
-                    await status_msg.delete()
+                if target_msg:
+                    try:
+                        await target_msg.delete()
+                    except Exception:
+                        pass
                 return True
-                return True
+        return False
+
+    if cached:
+        if await _send_cached_media(cached, status_msg):
+            return True
 
     if not downloader:
         error_text = (
@@ -688,11 +694,59 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
         else:
             await message.answer(error_text, reply_markup=err_kb)
         return False
-    
+
+    # Захват блокировки загрузки для предотвращения одновременных дубликатов
+    from utils.download_lock import acquire_download_lock, release_download_lock
+
+    is_first, download_event = await acquire_download_lock(clean)
+    if not is_first:
+        logger.info(f"⏳ [Deduplication] Ожидание параллельной загрузки для {clean}")
+        wait_text = (
+            f"⏳ Файл уже обрабатывается другим запросом, ожидаем...\n\n"
+            f"Платформа: {downloader.name}\n"
+            f"URL: {clean}"
+        )
+        if status_msg:
+            try:
+                await status_msg.edit_text(wait_text)
+            except Exception:
+                pass
+        else:
+            status_msg = await message.answer(wait_text)
+
+        try:
+            await asyncio.wait_for(download_event.wait(), timeout=120)
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ [Deduplication] Таймаут ожидания загрузки для {clean}")
+
+        # Повторно проверяем кэш после завершения первого запроса
+        cached = await get_media_cache(clean)
+        if only_audio and cached and not cached[1] and cached[0]:
+            # Дадим до 15 секунд фоновому извлечению аудио
+            for _ in range(15):
+                await asyncio.sleep(1)
+                cached = await get_media_cache(clean)
+                if cached and cached[1]:
+                    break
+
+        if cached and await _send_cached_media(cached, status_msg):
+            return True
+
+        # Если кэш так и не появился (например, первый запрос завершился ошибкой), пробуем скачать сами
+        is_first, download_event = await acquire_download_lock(clean)
+        if not is_first:
+            if status_msg:
+                try:
+                    await status_msg.edit_text("❌ Не удалось получить файл, попробуйте позже.", reply_markup=create_delete_button(message))
+                except Exception:
+                    pass
+            return False
+
     # Создаем временную директорию
     temp_dir = tempfile.mkdtemp()
     local_status_msg = status_msg
     cleanup_temp_dir = True
+    lock_released_in_background = False
     
     try:
         # Обновляем или создаем статус
@@ -845,6 +899,7 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                 # 4. В фоне отправляем в мусорную группу: [Видео] -> затем [Аудио]
                 if TRASH_GROUP_ID and file_size <= upload_limit:
                     cleanup_temp_dir = False
+                    lock_released_in_background = True
                     asyncio.create_task(background_trash_cache_video_and_audio(
                         file_path=file_path,
                         audio_path=audio_path,
@@ -1173,6 +1228,11 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
         return False
     
     finally:
+        # Освобождаем блокировку загрузки, если она не была передана фоновой задаче
+        if not lock_released_in_background:
+            from utils.download_lock import release_download_lock
+            await release_download_lock(clean)
+
         # Очищаем временную директорию (если не передана фоновой задаче)
         if cleanup_temp_dir:
             try:
