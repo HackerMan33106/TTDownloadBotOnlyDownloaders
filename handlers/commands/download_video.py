@@ -503,6 +503,100 @@ async def background_extract_audio(file_path: str, audio_path: str, clean_url: s
             pass
 
 
+async def background_trash_cache_video_and_audio(
+    file_path: str,
+    audio_path: str,
+    clean_url: str,
+    bot,
+    video_title: str = None,
+    temp_dir: str = None,
+    is_music: bool = False,
+    existing_video_file_id: str = None
+):
+    """Фоновая задача для отправки в мусорную группу: [Видео] -> [Аудио]"""
+    try:
+        from database.db import set_media_cache
+        from config.settings import TRASH_GROUP_ID
+        from utils.crypto import secure_callback
+        import hashlib
+
+        if not TRASH_GROUP_ID:
+            return
+
+        video_file_id = existing_video_file_id
+        audio_file_id = None
+        url_hash = hashlib.md5(clean_url.encode()).hexdigest()[:16]
+
+        if is_music:
+            if os.path.exists(file_path):
+                try:
+                    cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🗑️ Удалить из кэша", callback_data=secure_callback(f"clear_cache:{url_hash}"))]
+                    ])
+                    a_msg = await bot.send_audio(
+                        TRASH_GROUP_ID,
+                        FSInputFile(file_path),
+                        caption=clean_url,
+                        reply_markup=cache_keyboard
+                    )
+                    audio_file_id = a_msg.audio.file_id
+                    logger.info(f"📤 [Фон] Музыка отправлена в мусорную группу для {clean_url}")
+                    await set_media_cache(clean_url, None, audio_file_id)
+                except Exception as e:
+                    logger.error(f"❌ [Фон] Ошибка отправки музыки в мусорную группу: {e}")
+            return
+
+        # 1. Отправляем ВИДЕО в мусорную группу (если его ещё нет в кэше)
+        if not video_file_id and os.path.exists(file_path):
+            try:
+                cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🗑️ Удалить из кэша", callback_data=secure_callback(f"clear_cache:{url_hash}"))]
+                ])
+                v_msg = await bot.send_video(
+                    TRASH_GROUP_ID,
+                    FSInputFile(file_path),
+                    caption=clean_url,
+                    reply_markup=cache_keyboard
+                )
+                video_file_id = v_msg.video.file_id
+                logger.info(f"📤 [Фон] Видео отправлено в мусорную группу для {clean_url}")
+            except Exception as e:
+                logger.error(f"❌ [Фон] Ошибка отправки видео в мусорную группу: {e}")
+
+        # 2. Отправляем АУДИО в мусорную группу
+        if os.path.exists(audio_path):
+            try:
+                cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🗑️ Удалить из кэша", callback_data=secure_callback(f"clear_cache:{url_hash}"))]
+                ])
+                a_msg = await bot.send_audio(
+                    TRASH_GROUP_ID,
+                    FSInputFile(audio_path),
+                    title=video_title if video_title else "Аудио",
+                    caption=clean_url,
+                    reply_markup=cache_keyboard
+                )
+                audio_file_id = a_msg.audio.file_id
+                logger.info(f"📤 [Фон] Аудио отправлено в мусорную группу с кнопкой удаления для {clean_url}")
+            except Exception as e:
+                logger.error(f"❌ [Фон] Ошибка отправки аудио в мусорную группу: {e}")
+
+        # 3. Обновляем кэш
+        if video_file_id or audio_file_id:
+            await set_media_cache(clean_url, video_file_id, audio_file_id)
+            logger.info(f"💾 [Фон] Кэш обновлён: video_id={video_file_id is not None}, audio_id={audio_file_id is not None}")
+
+    except Exception as e:
+        logger.error(f"❌ [Фон] Ошибка фоновой задачи кэширования: {e}")
+    finally:
+        # 4. Удаляем временную папку
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+
 async def process_single_url(message: Message, url: str, original_msg_id: int = None, status_msg: Message = None, url_index: int = None, total_urls: int = None, only_audio: bool = False) -> bool:
     """Обрабатывает загрузку одного URL. Возвращает True если успешно, False если ошибка"""
     # Проверка URL на SSRF (запрет internal/private IP)
@@ -597,6 +691,7 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
     # Создаем временную директорию
     temp_dir = tempfile.mkdtemp()
     local_status_msg = status_msg
+    cleanup_temp_dir = True
     
     try:
         # Обновляем или создаем статус
@@ -678,6 +773,97 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
             video_file_id, audio_file_id = existing_cache
             logger.info(f"📦 Найден существующий кэш: video_id={video_file_id is not None}, audio_id={audio_file_id is not None}")
 
+        # === ЕСЛИ ЗАПРОШЕНО ТОЛЬКО АУДИО (-a флаг) ===
+        if only_audio:
+            # Создаем кнопку удаления для аудио
+            import time
+            audio_id = f"audio_only_{message.from_user.id}_{int(time.time())}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id}"))]
+            ])
+            caption = create_media_caption(message.from_user, url=clean, media_type="audio", title=None)
+
+            # 1. Если аудио уже есть в кэше — отдаём моментально
+            if audio_file_id:
+                if DEBUG_MODE:
+                    logger.info(f"📤 Отправка аудио из кэша (file_id)")
+                sent_audio = await message.bot.send_audio(message.chat.id, audio_file_id, caption=caption, reply_markup=keyboard)
+                if sent_audio:
+                    from database.audio import audio_downloaded, save_audio_downloaded
+                    audio_data = {
+                        "message_id": sent_audio.message_id,
+                        "chat_id": message.chat.id,
+                        "file_id": sent_audio.audio.file_id if sent_audio.audio else None
+                    }
+                    audio_downloaded[audio_id] = audio_data
+                    await save_audio_downloaded(audio_id, audio_data)
+                try:
+                    await local_status_msg.delete()
+                except Exception:
+                    pass
+                return True
+
+            # 2. Аудио нет в кэше — извлекаем из скачанного файла
+            audio_extracted = False
+            audio_path = file_path.rsplit('.', 1)[0] + '.mp3'
+            if is_music:
+                audio_path = file_path
+                audio_extracted = True
+            elif file_size <= upload_limit:
+                if DEBUG_MODE:
+                    logger.info(f"🎵 Начало извлечения аудио из {file_size/(1024*1024):.1f}MB видео")
+                audio_extracted = await extract_audio_simple(file_path, audio_path, local_status_msg, url_info)
+
+            # 3. Если аудио успешно получено — МГНОВЕННО отправляем пользователю!
+            if audio_extracted and os.path.exists(audio_path):
+                if DEBUG_MODE:
+                    logger.info(f"📤 Мгновенная отправка аудио пользователю ({os.path.getsize(audio_path)/(1024*1024):.1f}MB)")
+                sent_audio = await message.bot.send_audio(
+                    message.chat.id,
+                    FSInputFile(audio_path),
+                    caption=caption,
+                    reply_markup=keyboard,
+                    title=result.get('title', '')
+                )
+
+                if sent_audio:
+                    from database.audio import audio_downloaded, save_audio_downloaded
+                    audio_data = {
+                        "message_id": sent_audio.message_id,
+                        "chat_id": message.chat.id,
+                        "file_id": sent_audio.audio.file_id if sent_audio.audio else None
+                    }
+                    audio_downloaded[audio_id] = audio_data
+                    await save_audio_downloaded(audio_id, audio_data)
+
+                try:
+                    await local_status_msg.delete()
+                except Exception:
+                    pass
+
+                # 4. В фоне отправляем в мусорную группу: [Видео] -> затем [Аудио]
+                if TRASH_GROUP_ID and file_size <= upload_limit:
+                    cleanup_temp_dir = False
+                    asyncio.create_task(background_trash_cache_video_and_audio(
+                        file_path=file_path,
+                        audio_path=audio_path,
+                        clean_url=clean,
+                        bot=message.bot,
+                        video_title=result.get('title', 'Аудио'),
+                        temp_dir=temp_dir,
+                        is_music=is_music,
+                        existing_video_file_id=video_file_id
+                    ))
+
+                return True
+            else:
+                error_msg = "❌ Не удалось извлечь аудио из видео"
+                if not audio_extracted:
+                    error_msg += "\n\nВозможные причины:\n• Видео слишком большое\n• Таймаут извлечения\n• Отсутствует аудиодорожка"
+                await local_status_msg.edit_text(error_msg)
+                return False
+
+        # === ДЛЯ ОБЫЧНЫХ ВИДЕО (БЕЗ -a) ===
         # Сначала отправляем видео в мусорную группу для кэширования (быстро)
         if TRASH_GROUP_ID and file_size <= upload_limit:
             try:
@@ -723,85 +909,6 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                         await set_media_cache(clean, video_file_id, None)
             except Exception as e:
                 logger.error(f"Failed to trash cache for {clean}: {e}")
-
-        # Теперь извлекаем аудио только если запрошено (-a флаг)
-        audio_extracted = False
-        audio_path = file_path.rsplit('.', 1)[0] + '.mp3'
-        if not is_music and file_size <= upload_limit and not audio_file_id and only_audio:
-            if DEBUG_MODE:
-                logger.info(f"🎵 Начало извлечения аудио из {file_size/(1024*1024):.1f}MB видео")
-            audio_extracted = await extract_audio_simple(file_path, audio_path, local_status_msg, url_info)
-
-            # Отправляем извлечённое аудио в мусорную группу
-            if audio_extracted and TRASH_GROUP_ID:
-                try:
-                    from utils.crypto import secure_callback
-
-                    # Создаём кнопку для удаления из кэша с защитой
-                    url_hash = hashlib.md5(clean.encode()).hexdigest()[:16]
-                    cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🗑️ Удалить из кэша", callback_data=secure_callback(f"clear_cache:{url_hash}"))]
-                    ])
-
-                    a_msg = await message.bot.send_audio(
-                        TRASH_GROUP_ID,
-                        FSInputFile(audio_path),
-                        title=result.get('title', 'Аудио'),
-                        caption=clean,
-                        reply_markup=cache_keyboard
-                    )
-                    audio_file_id = a_msg.audio.file_id
-                    logger.info(f"📤 Аудио отправлено в мусорную группу с кнопкой удаления")
-                    # Обновляем кэш с audio_id
-                    await set_media_cache(clean, video_file_id, audio_file_id)
-                    logger.info(f"💾 Кэш обновлён: video_id={video_file_id is not None}, audio_id={audio_file_id is not None}")
-                except Exception as e:
-                    logger.error(f"Failed to cache audio for {clean}: {e}")
-
-        # Если мы хотим только аудио, отправляем его и завершаем
-        if only_audio:
-            # Создаем кнопку удаления для аудио
-            import time
-            audio_id = f"audio_only_{message.from_user.id}_{int(time.time())}"
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🗑️ Удалить", callback_data=secure_callback(f"delete_audio:{message.from_user.id}:{audio_id}"))]
-            ])
-
-            # Создаем caption для аудио через атрибут -a (без названия видео)
-            caption = create_media_caption(message.from_user, url=clean, media_type="audio", title=None)
-
-            sent_audio = None
-            if audio_file_id:
-                if DEBUG_MODE:
-                    logger.info(f"📤 Отправка аудио из кэша (file_id)")
-                sent_audio = await message.bot.send_audio(message.chat.id, audio_file_id, caption=caption, reply_markup=keyboard)
-            elif is_music:
-                logger.info(f"📤 Отправка музыкального файла")
-                sent_audio = await message.bot.send_audio(message.chat.id, FSInputFile(file_path), caption=caption, reply_markup=keyboard, title="")
-            elif audio_extracted and os.path.exists(audio_path):
-                if DEBUG_MODE:
-                    logger.info(f"📤 Отправка извлечённого аудио ({os.path.getsize(audio_path)/(1024*1024):.1f}MB)")
-                sent_audio = await message.bot.send_audio(message.chat.id, FSInputFile(audio_path), caption=caption, reply_markup=keyboard, title="")
-            else:
-                error_msg = "❌ Не удалось извлечь аудио из видео"
-                if not audio_extracted:
-                    error_msg += "\n\nВозможные причины:\n• Видео слишком большое\n• Таймаут извлечения\n• Отсутствует аудиодорожка"
-                await local_status_msg.edit_text(error_msg)
-                return False
-
-            # Сохраняем информацию об аудио для возможности удаления
-            if sent_audio:
-                from database.audio import audio_downloaded, save_audio_downloaded
-                audio_data = {
-                    "message_id": sent_audio.message_id,
-                    "chat_id": message.chat.id,
-                    "file_id": sent_audio.audio.file_id if sent_audio.audio else None
-                }
-                audio_downloaded[audio_id] = audio_data
-                await save_audio_downloaded(audio_id, audio_data)
-
-            await local_status_msg.delete()
-            return True
 
         # Проверяем размер и разделяем если нужно
         if file_size > upload_limit:
@@ -1069,11 +1176,12 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
         return False
     
     finally:
-        # Очищаем временную директорию
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
+        # Очищаем временную директорию (если не передана фоновой задаче)
+        if cleanup_temp_dir:
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
 
 
 @router.message(Command("dw"))
