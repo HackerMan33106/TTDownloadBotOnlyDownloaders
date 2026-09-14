@@ -27,6 +27,7 @@ from services.downloaders.instagram import InstagramDownloader
 from services.downloaders.pornhub import PornHubDownloader
 from config.settings import DEBUG_MODE, logger, MAX_UPLOAD_SIZE_MB
 from utils.helpers import create_delete_button, create_media_caption
+from utils.crypto import secure_callback
 
 from utils.progress import DownloadProgress
 from services.downloaders.base import is_safe_url
@@ -869,8 +870,6 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
             try:
                 if is_music:
                     if not audio_file_id:
-                        from utils.crypto import secure_callback
-
                         # Создаём кнопку для удаления из кэша
                         url_hash = hashlib.md5(clean.encode()).hexdigest()[:16]
                         cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -889,8 +888,6 @@ async def process_single_url(message: Message, url: str, original_msg_id: int = 
                 else:
                     # Отправляем видео только если его нет в кэше
                     if not video_file_id:
-                        from utils.crypto import secure_callback
-
                         # Создаём кнопку для удаления из кэша
                         url_hash = hashlib.md5(clean.encode()).hexdigest()[:16]
                         cache_keyboard = InlineKeyboardMarkup(inline_keyboard=[
