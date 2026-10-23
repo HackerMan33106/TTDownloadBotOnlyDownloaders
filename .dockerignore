@@ -47,3 +47,5 @@ QUICKSTART.md
 # Скрипты установки
 install.sh
 emergency_cleanup.sh
+
+tests/

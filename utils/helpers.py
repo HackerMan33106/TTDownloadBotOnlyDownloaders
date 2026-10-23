@@ -11,6 +11,7 @@ from aiogram import Bot, types
 from aiogram.exceptions import TelegramBadRequest
 
 from utils.messages import DENY_MESSAGES
+from utils.youtube import clean_youtube_shorts_url
 from config.settings import TEMP_DIR, logger
 from database.audio import load_audio_url_storage, delete_audio_url_storage
 
@@ -212,6 +213,9 @@ def create_media_caption(user: "types.User", url: str = None, media_type: str = 
 
     # Формируем подпись в зависимости от типа медиа
     if media_type == "video":
+        shorts_url = clean_youtube_shorts_url(url) if url else None
+        if shorts_url:
+            return f"{username_display}\n{shorts_url}"
         # Паттерн для видео: "🎬 Название\n@username\n\nURL"
         parts = []
         if title:

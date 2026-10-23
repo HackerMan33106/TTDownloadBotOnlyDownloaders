@@ -1,5 +1,6 @@
 import sqlite3
 import uuid
+from contextlib import closing
 from typing import Optional
 
 from config.settings import DB_PATH, logger
@@ -11,9 +12,9 @@ _callback_cache = OrderedDict()
 
 def init_callbacks_table():
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA synchronous = OFF")
+            conn.execute("PRAGMA synchronous = FULL")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS secure_callbacks (
                     short_id TEXT PRIMARY KEY,
@@ -21,10 +22,11 @@ def init_callbacks_table():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            conn.execute("DELETE FROM secure_callbacks WHERE datetime(created_at) < datetime('now', '-30 days')")
+            # Кнопки в Telegram живут дольше процесса бота: не удаляем их по возрасту.
             conn.commit()
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации таблицы secure_callbacks: {e}")
+        raise
 
 
 def secure_callback(data: str) -> str:
@@ -33,13 +35,10 @@ def secure_callback(data: str) -> str:
         
     short_id = uuid.uuid4().hex[:16]
 
-    _callback_cache[short_id] = data
-    if len(_callback_cache) > MAX_CACHE_SIZE:
-        _callback_cache.popitem(last=False)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("PRAGMA synchronous = OFF")
+        with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
             conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = FULL")
             conn.execute(
                 "INSERT INTO secure_callbacks (short_id, data) VALUES (?, ?)",
                 (short_id, data)
@@ -48,6 +47,11 @@ def secure_callback(data: str) -> str:
             logger.debug(f"✅ Сохранён callback: {short_id}")
     except Exception as e:
         logger.error(f"❌ Ошибка сохранения secure_callback {short_id}: {e}")
+        # Не отправляем кнопку, которая работает лишь до перезапуска процесса.
+        raise
+    _callback_cache[short_id] = data
+    if len(_callback_cache) > MAX_CACHE_SIZE:
+        _callback_cache.popitem(last=False)
     return f"sec:{short_id}"
 
 
@@ -63,9 +67,7 @@ def verify_callback(callback_data: str) -> Optional[str]:
             return _callback_cache[short_id]
 
         try:
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.execute("PRAGMA synchronous = OFF")
-                conn.execute("PRAGMA journal_mode = WAL")
+            with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT data FROM secure_callbacks WHERE short_id = ?", (short_id,))
                 row = cursor.fetchone()

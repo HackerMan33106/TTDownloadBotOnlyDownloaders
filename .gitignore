@@ -40,6 +40,7 @@ Thumbs.db
 # Остальное
 cookies.txt
 CLAUDE.md
+tests/
 
 # Claude Code
 .claude/

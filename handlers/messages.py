@@ -4,6 +4,7 @@
 import os
 import time
 import asyncio
+import tempfile
 
 from aiogram import Router, types, F, Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, FSInputFile
@@ -13,7 +14,8 @@ from config.settings import (
     is_debug_mode,
     PERMANENT_ADMIN,
     logger,
-    MAX_UPLOAD_SIZE_MB
+    MAX_UPLOAD_SIZE_MB,
+    TEMP_DIR,
 )
 from database.admins import is_admin, get_all_admins
 from database.users import ruser
@@ -21,6 +23,8 @@ from database.limits import get_user_limit, check_and_increment_usage, decrement
 from database.audio import audio_url_storage, save_audio_url_storage
 from database.whitelist import is_user_whitelisted, is_group_whitelisted
 from services.downloader import download_tiktok_content
+from services.downloaders.youtube import YouTubeDownloader
+from utils.youtube import clean_youtube_shorts_url, extract_youtube_shorts_urls
 from utils.helpers import get_user_link
 from utils.crypto import secure_callback
 from utils.tiktok import (
@@ -41,9 +45,9 @@ from services.social_downloader import download_social_content
 
 router = Router()
 
-def has_tiktok_url(message: types.Message) -> bool:
-    """Проверяет, содержит ли сообщение TikTok ссылку"""
-    return message.text and is_tiktok_url(message.text)
+def has_short_video_url(message: types.Message) -> bool:
+    """Проверяет ссылки TikTok и YouTube Shorts для автоскачивания."""
+    return bool(message.text and (is_tiktok_url(message.text) or extract_youtube_shorts_urls(message.text)))
 
 
 def has_social_url(message: types.Message) -> bool:
@@ -58,16 +62,17 @@ def has_social_url(message: types.Message) -> bool:
     return platform == "facebook"
 
 
-@router.message(F.text & ~F.text.startswith('/'), has_tiktok_url)
+@router.message(F.text & ~F.text.startswith('/'), has_short_video_url)
 async def handle_message(message: types.Message, bot: Bot):
-    """Обработчик сообщений с TikTok ссылками"""
+    """Автоскачивание TikTok и YouTube Shorts с общими проверками доступа."""
     # Запоминаем пользователя в базу для возможности использования @username
     await ruser(message.from_user)
 
     user_id = message.from_user.id
 
-    # Извлекаем все TikTok ссылки из сообщения для логирования
-    urls = extract_all_tiktok_urls(message.text)
+    urls = list(dict.fromkeys(
+        extract_all_tiktok_urls(message.text) + extract_youtube_shorts_urls(message.text)
+    ))
     user_link = get_user_link(message.from_user)
 
     # Проверяем whitelist групп (если это групповой чат)
@@ -129,9 +134,10 @@ async def handle_message(message: types.Message, bot: Bot):
 
 
 async def process_single_url(original_message: types.Message, url: str, msg: types.Message, user_link: str, bot: Bot, only_audio: bool = False):
-    """Обрабатывает одну TikTok ссылку"""
+    """Обрабатывает одну ссылку TikTok или YouTube Shorts."""
     # Очищаем URL для отображения в caption
-    clean_url = clean_tiktok_url(url)
+    shorts_url = clean_youtube_shorts_url(url)
+    clean_url = shorts_url or clean_tiktok_url(url)
 
     if not clean_url:
         _err_ctx = "неподдерживаемый или нераспознанный формат ссылки TikTok"
@@ -211,7 +217,7 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
 
     # Получаем актуальные данные о лимите после списания и формируем caption
     limit_data = await get_user_limit(user_id) if needs_limit_check else None
-    if limit_data:
+    if limit_data and not shorts_url:
         max_uses, current_uses, _ = limit_data
         logger.info(f"📊 Пользователь {user_id}: использовано {current_uses}/{max_uses}")
         remaining = max(0, max_uses - current_uses)
@@ -467,8 +473,20 @@ async def process_single_url(original_message: types.Message, url: str, msg: typ
         if is_slideshow:
             await msg.edit_text("⏳ Скачиваю слайдшоу...")
         
-        # Передаем уже очищенный URL
-        content_path, content_type = await download_tiktok_content(clean_url)
+        if shorts_url:
+            # yt-dlp блокирует поток; обработка других сообщений продолжает работать.
+            with tempfile.TemporaryDirectory(prefix="youtube_short_", dir=TEMP_DIR) as output_dir:
+                downloader = YouTubeDownloader()
+                result = await asyncio.to_thread(
+                    lambda: asyncio.run(downloader.download(clean_url, output_dir))
+                )
+                content_path = result.get("file_path") if result else None
+                if content_path:
+                    await _process_video(original_message, content_path, caption_text, clean_url, user_id, user_link, msg, bot, only_audio)
+                    return
+            content_path, content_type = None, "video"
+        else:
+            content_path, content_type = await download_tiktok_content(clean_url)
         
         # Проверяем на возрастное ограничение
         if content_path:
