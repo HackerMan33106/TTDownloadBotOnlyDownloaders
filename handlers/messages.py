@@ -41,6 +41,7 @@ from utils.social import (
     clean_social_url
 )
 from services.social_downloader import download_social_content
+from middleware.access import register_access_middleware
 
 
 router = Router()
@@ -1428,4 +1429,5 @@ async def handle_social_message(message: types.Message, bot: Bot):
 
 def register_message_handlers(dp):
     """Регистрация обработчиков сообщений"""
+    register_access_middleware(dp)
     dp.include_router(router)

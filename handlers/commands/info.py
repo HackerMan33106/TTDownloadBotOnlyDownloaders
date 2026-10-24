@@ -22,8 +22,9 @@ async def help_command(message: types.Message):
         "• /help - эта справка\n\n"
         
         "📥 Загрузка контента:\n"
-        "• /dw url - загрузка видео/аудио/фото (доступно всем)\n"
+        "• /dw url - загрузка видео/аудио/фото\n"
         "• /dw help - подробная справка по /dw\n\n"
+        "Доступ: пользователям из белого списка и участникам разрешённых групп.\n\n"
     )
     
     if message.from_user.id in PERMANENT_ADMIN:
