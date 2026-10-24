@@ -6,7 +6,8 @@ from typing import Optional, Dict, Any, Callable
 from pathlib import Path
 import yt_dlp
 
-from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, get_readonly_cookies_path, YTDLP_REMOTE_COMPONENTS
+from .base import BaseDownloader, MAX_DOWNLOAD_SIZE, YTDLP_REMOTE_COMPONENTS
+from services.youtube_session import get_youtube_cookies_path, refresh_youtube_session, is_youtube_auth_error
 from config.settings import logger
 
 
@@ -34,16 +35,31 @@ class YouTubeDownloader(BaseDownloader):
                 'quiet': True,
                 'no_warnings': True,
                 'remote_components': YTDLP_REMOTE_COMPONENTS,
+                'socket_timeout': 20,
+                'retries': 2,
+                'extractor_retries': 1,
             }
-            cookies_copy = get_readonly_cookies_path()
-            if cookies_copy:
-                opts['cookiefile'] = cookies_copy
             if progress_hook:
                 opts['progress_hooks'] = [progress_hook]
 
             logger.info(f"YouTube: Загрузка {url}")
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+            for attempt in range(2):
+                cookies_copy = get_youtube_cookies_path()
+                opts.pop('cookiefile', None)
+                if cookies_copy:
+                    opts['cookiefile'] = cookies_copy
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([url])
+                    break
+                except yt_dlp.utils.DownloadError as error:
+                    if attempt or not is_youtube_auth_error(error) or not refresh_youtube_session():
+                        raise
+                    logger.info('YouTube: сессия обновлена в браузере, повторяю загрузку')
+                finally:
+                    if cookies_copy and os.path.exists(cookies_copy):
+                        os.remove(cookies_copy)
+                    cookies_copy = None
 
             files = list(Path(output_dir).glob('*.mp4'))
             if not files:
