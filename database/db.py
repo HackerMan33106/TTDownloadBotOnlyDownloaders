@@ -2,7 +2,7 @@ import aiosqlite
 from config.settings import DB_PATH, logger
 
 async def init_db():
-    """Инициализация таблиц базы данных (Облегченная версия)"""
+    """Инициализация таблиц базы данных"""
     async with aiosqlite.connect(DB_PATH) as conn:
         # 1. Поддержание информации о пользователях
         await conn.execute('''
